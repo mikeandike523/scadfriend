@@ -40,62 +40,12 @@ body,
   padding: 0;
   width: 100vw;
   height: 100vh;
-}
-
-body {
-  /* In general should not affect things,
-  * but I think this might help encourage the #root element to be the scrolling element instead of body
-  * Our goal is to make the <body> element redundant and present only to have valid HTML
-  */
-  overflow: hidden;
-}
-
-#root {
-  /* Gracefully handle pages that have a lot of linear content */
+  font-family: sans-serif;
+  line-height: 1.5;
   overflow: auto;
 }
 
-div,
-span,
-p,
-b,
-i,
-a,
-strong,
-em,
-li,
-h1,
-h2,
-h3,
-h4,
-h5,
-h6,
-aside,
-caption,
-details,
-summary,
-pre,
-code,
-nav,
-main,
-th,
-td,
-blockquote,
-summary,
-header,
-footer,
-main {
-/* Set 1.5 line height for text elements for best readability */
-  line-height: 1.5;
-/*
-* Default/backup font of sans-serif as browser default is often serif which is outdated
-* However ideally we load a specific font
-*/
-font-family: sans-serif;
-}
-
-code {
-  /* Make source code examples or snippets be monospace as backup/default font */
+code:not(.monaco-editor){
   font-family: monospace;
 }
 

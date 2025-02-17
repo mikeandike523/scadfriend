@@ -10,6 +10,11 @@
     "preview": "vite preview"
   },
   "dependencies": {
+    "@emotion/react": "^11.14.0",
+    "@fontsource/fira-code": "^5.1.1",
+    "@monaco-editor/react": "^4.7.0",
+    "@vitejs/plugin-react": "^4.3.4",
+    "monaco-editor": "^0.52.2",
     "react": "^19.0.0",
     "react-dom": "^19.0.0",
     "style-props-html": "^0.0.6"

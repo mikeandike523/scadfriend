@@ -1,7 +1,21 @@
 import { defineConfig } from 'vite'
-import react from '@vitejs/plugin-react-swc'
+import react from '@vitejs/plugin-react'
 
-// https://vite.dev/config/
 export default defineConfig({
   plugins: [react()],
+  optimizeDeps: {
+    include: ['@fontsource/fira-code'],
+  },
+  build: {
+    commonjsOptions: {
+      include: [/@fontsource\/.*/, 'node_modules/**'],
+    },
+  },
+  css: {
+    preprocessorOptions: {
+      scss: {
+        additionalData: `@import "@fontsource/fira-code/index.css";`,
+      },
+    },
+  },
 })
