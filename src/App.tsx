@@ -10,19 +10,26 @@ import "@fontsource/fira-code/700.css";
 import "@fontsource/fira-code/index.css";
 
 import "./App.css";
+import exampleCode from "./assets/example.scad?raw";
+import { useRegisterOpenSCADLanguage } from "./openscad";
+
 
 const MAX_MESSAGES = 200;
 const LOCAL_STORAGE_KEY = "openscad-code";
 
 function App() {
+  useRegisterOpenSCADLanguage();
   const consoleDivRef = useRef<HTMLDivElement>(null);
   const [messages, setMessages] = useState<string[]>([]);
+
 
   const handleEditorDidMount: OnMount = (editor) => {
     // Load code from localStorage when editor mounts
     const savedCode = localStorage.getItem(LOCAL_STORAGE_KEY);
     if (savedCode) {
       editor.setValue(savedCode);
+    }else{
+      editor.setValue(exampleCode);
     }
     // Set the cursor position to the end of the content
     const model = editor.getModel();
@@ -82,11 +89,10 @@ function App() {
             minimap: { enabled: false },
           }}
           defaultLanguage="openscad"
-          defaultValue={"// OpenSCAD Code\n\n"}
-          theme="vs-dark"
+          defaultValue={"// Loading..."}
+          theme="openscad-theme"
           onMount={handleEditorDidMount}
           onChange={(value) => {
-            console.log(value);
             if (typeof value === "string") {
               if (value === "") {
                 localStorage.removeItem(LOCAL_STORAGE_KEY);

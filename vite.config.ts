@@ -18,4 +18,5 @@ export default defineConfig({
       },
     },
   },
+  assetsInclude: ['**/*.scad'], // Add this line
 })
