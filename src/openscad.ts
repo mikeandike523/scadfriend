@@ -73,7 +73,7 @@ export function useRegisterOpenSCADLanguage() {
     ],
 
     // Symbols used for operators
-    symbols: /[=><!~?:&|+\-*\/\^%]+/,
+    symbols: /[=><!~?:&|+\-*/^%]+/,
 
     // String escape sequences
     escapes: /\\(?:[nrt\\"'])/,
@@ -100,7 +100,7 @@ export function useRegisterOpenSCADLanguage() {
         [/\d+/, "number"],
 
         // Delimiters and operators
-        [/[{}()\[\]]/, "@brackets"],
+        [/[{}()[\]]/, "@brackets"],
         [/[;,]/, "delimiter"],
         [
           /@symbols/,
@@ -128,7 +128,7 @@ export function useRegisterOpenSCADLanguage() {
         [/[^/*]+/, "comment"],
         [/\/\*/, "comment", "@comment"],
         [/\*\//, "comment", "@pop"],
-        [/[\/*]/, "comment"],
+        [/[/*]/, "comment"],
       ],
 
       // String state

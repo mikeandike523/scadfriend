@@ -1,0 +1,1 @@
+{"root":["./vite.config.ts","./emit/vite.config.d.ts","./emit/src/app.d.ts","./emit/src/main.d.ts","./emit/src/openscad.d.ts","./src/app.tsx","./src/main.tsx","./src/openscad.ts","./src/scad.d.ts","./src/vite-env.d.ts"],"version":"5.7.3"}
