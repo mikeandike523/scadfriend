@@ -1,0 +1,111 @@
+/**
+* Contains all styles globally relevant to the SPA and the HTML document housing it
+*/
+
+*,
+*::before,
+*::after {
+  /* Box sizing of border-box is the superior default for SPAs */
+  box-sizing: border-box;
+
+  /* 
+  * In general I am not a fan of different items having default margin and padding
+  * Especially margin, as in 2025 margin is discouraged in favor of padding
+
+  * HOWEVER, note that this means headers and other items need to have manual margin an padding
+  * However I believe this is better than relying on browser default styles
+  * If I want to, in App.css I can add some carefully crafted defaults for different text elements
+  * 
+  * @TODO: Figure out how and if this effects inputs and buttons
+  */
+  margin: 0;
+  padding: 0;
+}
+
+html {
+  /* Set 1rem to equal 16px */
+  font-size: 16px;
+  /* Enable smooth scrolling */
+  scroll-behavior: smooth;
+}
+
+/* Resize body and app root element to occupy entire viewport
+* This is the superior default for SPAs and highly interactive web apps
+*/
+
+
+body,
+#root {
+  margin: 0;
+  padding: 0;
+  width: 100vw;
+  height: 100vh;
+}
+
+body {
+  /* In general should not affect things,
+  * but I think this might help encourage the #root element to be the scrolling element instead of body
+  * Our goal is to make the <body> element redundant and present only to have valid HTML
+  */
+  overflow: hidden;
+}
+
+#root {
+  /* Gracefully handle pages that have a lot of linear content */
+  overflow: auto;
+}
+
+div,
+span,
+p,
+b,
+i,
+a,
+strong,
+em,
+li,
+h1,
+h2,
+h3,
+h4,
+h5,
+h6,
+aside,
+caption,
+details,
+summary,
+pre,
+code,
+nav,
+main,
+th,
+td,
+blockquote,
+summary,
+header,
+footer,
+main {
+/* Set 1.5 line height for text elements for best readability */
+  line-height: 1.5;
+/*
+* Default/backup font of sans-serif as browser default is often serif which is outdated
+* However ideally we load a specific font
+*/
+font-family: sans-serif;
+}
+
+code {
+  /* Make source code examples or snippets be monospace as backup/default font */
+  font-family: monospace;
+}
+
+/* 
+* A button should represent a clickable item to perform an action
+* There should never be any legitimate reason to need to highlight the text within a button
+*/
+button{
+  cursor: pointer;
+  user-select: none;
+}
+
+
