@@ -1,8 +1,4 @@
 {
-  "compilerOptions": {
-    "module":"ESNext",
-    "moduleResolution": "bundler"
-  },
   "references": [
     { "path": "./tsconfig.app.json" },
     { "path": "./tsconfig.node.json" }

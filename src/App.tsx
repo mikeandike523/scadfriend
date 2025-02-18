@@ -12,7 +12,7 @@ import "@fontsource/fira-code/index.css";
 import "./App.css";
 import exampleCode from "./assets/example.scad?raw";
 import { useRegisterOpenSCADLanguage } from "./openscad-lang";
-import OpenSCAD, { type OpenSCAD as SCADEngine } from "./openscad.js";
+import OpenSCAD, { type OpenSCAD as SCADEngine } from "./openscad";
 
 const MAX_MESSAGES = 200;
 const LOCAL_STORAGE_KEY = "openscad-code";
