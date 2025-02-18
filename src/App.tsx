@@ -256,6 +256,8 @@ function App() {
 
     const detectedParts = identifyParts(editorValue);
 
+    console.log(detectedParts)
+
     log(`Found Parts: ${Object.keys(detectedParts).join(", ")}`);
 
     async function renderPart(partName: string, part: OpenSCADPart) {
@@ -278,9 +280,9 @@ function App() {
         "--autocenter",
         "--render",
         "--export-format=binstl",
-        "--enable=manifold"
       ];
-      const filename=`part_${partName}.stl`;
+      const filename = `part_${partName}.stl`;
+      
       args.push("-o", filename);
       instance.callMain(args);
       log(`${performance.now() - startTime}ms to perform render`);
