@@ -1,5 +1,5 @@
 import Editor, { OnMount } from "@monaco-editor/react";
-import { useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { Button, Div } from "style-props-html";
 
 import "@fontsource/fira-code/300.css";
@@ -12,7 +12,7 @@ import "@fontsource/fira-code/index.css";
 import "./App.css";
 import exampleCode from "./assets/example.scad?raw";
 import { useRegisterOpenSCADLanguage } from "./openscad-lang";
-import OpenSCAD from "./openscad.js";
+import OpenSCAD, { type OpenSCAD as SCADEngine } from "./openscad.js";
 
 const MAX_MESSAGES = 200;
 const LOCAL_STORAGE_KEY = "openscad-code";
@@ -23,6 +23,19 @@ function App() {
   const [messages, setMessages] = useState<string[]>([]);
   const [editorValue, setEditorValue] = useState("");
 
+  const scadEngineRef = useRef<SCADEngine | null>(null);
+
+  async function startScadEngine() {
+    if (scadEngineRef.current === null) {
+      scadEngineRef.current = await OpenSCAD({
+        noInitialRun: true,
+      });
+    }
+  }
+
+  useEffect(() => {
+    startScadEngine();
+  }, []);
 
   const handleEditorDidMount: OnMount = (editor) => {
     // Load code from localStorage when editor mounts
@@ -30,7 +43,7 @@ function App() {
     if (savedCode) {
       editor.setValue(savedCode);
       setEditorValue(savedCode);
-    }else{
+    } else {
       editor.setValue(exampleCode);
       setEditorValue(exampleCode);
     }
@@ -62,41 +75,45 @@ function App() {
   };
 
   const renderModel = async () => {
+    await startScadEngine();
+
+    const instance = scadEngineRef.current;
+
+    if (!instance) {
+      log("SCAD engine not ready yet.");
+      return;
+    }
+
     log("Rendering...");
 
     const filename = "design.stl";
 
-    log("Initializing OpenSCAD...");
-
-    const instance = await OpenSCAD({noInitialRun: true});
-    
     // Write a file to the filesystem
     instance.FS.writeFile("/input.scad", editorValue); // OpenSCAD script to generate a 10mm cube
-    
-    log("Performing render...")
+
+    log("Performing render...");
 
     // Run like a command-line program with arguments
     instance.callMain(["/input.scad", "--enable=manifold", "-o", filename]); // manifold is faster at rendering
-    
-    log("Reading output...")
+
+    log("Reading output...");
 
     // Read the output 3D-model into a JS byte-array
-    const output = instance.FS.readFile("/"+filename);
-    
-    log("Downloading files")
+    const output = instance.FS.readFile("/" + filename);
+
+    log("Downloading files");
 
     // Generate a link to output 3D-model and download the output STL file
     const link = document.createElement("a");
     link.href = URL.createObjectURL(
-    new Blob([output], { type: "application/octet-stream" }));
+      new Blob([output], { type: "application/octet-stream" })
+    );
     link.download = filename;
     document.body.append(link);
     link.click();
     link.remove();
     log("Render completed.");
   };
-
-
 
   return (
     <Div
@@ -109,7 +126,7 @@ function App() {
       <Div height="100%" flex={1.5}>
         <Editor
           options={{
-            fontSize: 22,
+            fontSize: 18,
             fontFamily: "'Fira Code', monospace",
             fontLigatures: true,
             fontWeight: "400",
@@ -130,8 +147,7 @@ function App() {
             } else {
               localStorage.removeItem(LOCAL_STORAGE_KEY);
             }
-            setEditorValue(value??"");
-
+            setEditorValue(value ?? "");
           }}
         />
       </Div>
