@@ -38,15 +38,21 @@ function rgbaByteToInt(r: number, g: number, b: number, a: number) {
  */
 function getColorOrDefault(
   colorString: string | undefined,
-  defaultColor = 0xff00ffff
+  defaultColor = 0xff00ff
 ): number {
+  console.log(colorString)
   if (!colorString) return defaultColor;
   const color = Color(colorString);
-  const { r, g, b, a } = color.object();
+  const { r, g, b, a } = {
+    r: color.red(),
+    g: color.green(),
+    b: color.blue(),
+    a: color.alpha()
+  }
   return rgbaByteToInt(
-    Math.round(r * 255),
-    Math.round(g * 255),
-    Math.round(b * 255),
+    r,
+    g,
+    b,
     Math.round(a * 255)
   );
 }
@@ -70,12 +76,6 @@ function App() {
     // Create the scene and set a background color.
     const scene = new THREE.Scene();
     scene.background = new THREE.Color(0xbfd1e5);
-    // Add basic lights.
-    const ambientLight = new THREE.AmbientLight(0x404040);
-    scene.add(ambientLight);
-    const directionalLight = new THREE.DirectionalLight(0xffffff, 1);
-    directionalLight.position.set(0, 0, 1);
-    scene.add(directionalLight);
 
     // Create the camera.
     const camera = new THREE.PerspectiveCamera(75, 1, 0.1, 1000);
@@ -83,13 +83,15 @@ function App() {
 
     // Create the renderer.
     const renderer = new THREE.WebGLRenderer({ antialias: true });
-    // The size will be set once the viewer pane mounts.
+    renderer.shadowMap.enabled = true; // enable shadow mapping
 
     // Create the STL loader.
     const loader = new STLLoader();
 
     return { scene, camera, renderer, loader };
   }, []);
+
+
 
   // When the viewer pane (Div) mounts, append the Three.js renderer's DOM element.
   useEffect(() => {
@@ -142,6 +144,8 @@ function App() {
     const { scene, loader, camera } = threeObjects;
 
     // Remove existing meshes (but keep lights and other scene objects).
+    // Note: This simple traverse might remove children while iterating;
+    // in a production environment, you might wish to filter the list first.
     scene.traverse((child) => {
       if ((child as THREE.Mesh).isMesh) {
         scene.remove(child);
@@ -154,8 +158,8 @@ function App() {
         try {
           // Parse the STL binary data into a geometry.
           const geometry = loader.parse(part.stl.buffer);
-          // You can adjust the color here. For now, we use the part color.
-          const material = new THREE.MeshPhongMaterial({
+          // Use a material that reacts to light.
+          const material = new THREE.MeshBasicMaterial({
             color: getColorOrDefault(part.color),
           });
           const mesh = new THREE.Mesh(geometry, material);
@@ -179,13 +183,12 @@ function App() {
       bbox.getCenter(center);
       const size = new THREE.Vector3();
       bbox.getSize(size);
-      // Determine the maximum dimension.
       const maxDim = Math.max(size.x, size.y, size.z);
       // Compute the camera distance based on the fov and max dimension.
       const fov = camera.fov * (Math.PI / 180);
       let cameraDistance = maxDim / (2 * Math.tan(fov / 2));
-      // Add an extra margin.
-      cameraDistance *= 1.5;
+      cameraDistance *= 1.5; // extra margin
+
       // For a 3/4 view, offset the camera in all axes.
       const offset = new THREE.Vector3(1, 1, 1)
         .normalize()
@@ -252,6 +255,9 @@ function App() {
     completedModelRef.current = {};
 
     const detectedParts = identifyParts(editorValue);
+
+    console.log(detectedParts)
+
     log(`Found Parts: ${Object.keys(detectedParts).join(", ")}`);
 
     async function renderPart(partName: string, part: OpenSCADPart) {
