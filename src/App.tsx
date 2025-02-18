@@ -11,8 +11,8 @@ import "@fontsource/fira-code/index.css";
 
 import "./App.css";
 import exampleCode from "./assets/example.scad?raw";
-import { useRegisterOpenSCADLanguage } from "./openscad";
-
+import { useRegisterOpenSCADLanguage } from "./openscad-lang";
+import OpenSCAD from "./openscad.js";
 
 const MAX_MESSAGES = 200;
 const LOCAL_STORAGE_KEY = "openscad-code";
@@ -21,6 +21,7 @@ function App() {
   useRegisterOpenSCADLanguage();
   const consoleDivRef = useRef<HTMLDivElement>(null);
   const [messages, setMessages] = useState<string[]>([]);
+  const [editorValue, setEditorValue] = useState("");
 
 
   const handleEditorDidMount: OnMount = (editor) => {
@@ -28,8 +29,10 @@ function App() {
     const savedCode = localStorage.getItem(LOCAL_STORAGE_KEY);
     if (savedCode) {
       editor.setValue(savedCode);
+      setEditorValue(savedCode);
     }else{
       editor.setValue(exampleCode);
+      setEditorValue(exampleCode);
     }
     // Set the cursor position to the end of the content
     const model = editor.getModel();
@@ -58,17 +61,42 @@ function App() {
     });
   };
 
-  const previewModel = async () => {
-    log("Previewing...");
-
-    log("Preview completed.");
-  };
-
   const renderModel = async () => {
     log("Rendering...");
 
-    log("Rendering completed.");
+    const filename = "design.stl";
+
+    log("Initializing OpenSCAD...");
+
+    const instance = await OpenSCAD({noInitialRun: true});
+    
+    // Write a file to the filesystem
+    instance.FS.writeFile("/input.scad", editorValue); // OpenSCAD script to generate a 10mm cube
+    
+    log("Performing render...")
+
+    // Run like a command-line program with arguments
+    instance.callMain(["/input.scad", "--enable=manifold", "-o", filename]); // manifold is faster at rendering
+    
+    log("Reading output...")
+
+    // Read the output 3D-model into a JS byte-array
+    const output = instance.FS.readFile("/"+filename);
+    
+    log("Downloading files")
+
+    // Generate a link to output 3D-model and download the output STL file
+    const link = document.createElement("a");
+    link.href = URL.createObjectURL(
+    new Blob([output], { type: "application/octet-stream" }));
+    link.download = filename;
+    document.body.append(link);
+    link.click();
+    link.remove();
+    log("Render completed.");
   };
+
+
 
   return (
     <Div
@@ -102,6 +130,8 @@ function App() {
             } else {
               localStorage.removeItem(LOCAL_STORAGE_KEY);
             }
+            setEditorValue(value??"");
+
           }}
         />
       </Div>
@@ -114,9 +144,6 @@ function App() {
       >
         {/* Preview and Render Controls */}
         <Div display="flex" flexDirection="row">
-          <Button flex={1} fontSize="200%" onClick={previewModel}>
-            Preview
-          </Button>
           <Button flex={1} fontSize="200%" onClick={renderModel}>
             Render
           </Button>

@@ -4,7 +4,7 @@ import react from '@vitejs/plugin-react'
 export default defineConfig({
   plugins: [react()],
   optimizeDeps: {
-    include: ['@fontsource/fira-code'],
+    include: [],
   },
   build: {
     commonjsOptions: {
