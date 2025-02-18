@@ -49,6 +49,7 @@ var OpenSCAD = (() => {
           scriptDirectory.replace(/[?#].*/, "").lastIndexOf("/") + 1
         );
       }
+      scriptDirectory = "/"
       {
         if (ENVIRONMENT_IS_WORKER) {
           readBinary = (url) => {
@@ -225,7 +226,7 @@ var OpenSCAD = (() => {
       };
     }
     function findWasmBinary() {
-      return "/src/openscad.wasm";
+      return "/openscad.wasm";
 
       // if (Module["locateFile"]) {
       //   var f = "openscad.wasm";

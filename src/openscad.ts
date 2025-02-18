@@ -32,13 +32,15 @@ export interface FS {
 }
 
 export async function OpenSCAD(options?: InitOptions): Promise<OpenSCAD> {
-  const url = new URL(`./openscad.wasm.js`, import.meta.url).href;
+  // const url = new URL(`./openscad.wasm.js`, import.meta.url).href;
+  const url = "/openscad.wasm.js"
   const request = await fetch(url);
   const moduleCode = await request.text();
   const moduleBase64 = "data:text/javascript;base64," + btoa(moduleCode);
   const module = {
     noInitialRun: true,
-    locateFile: (path: string) => new URL(`./${path}`, import.meta.url).href,
+    // locateFile: (path: string) => new URL(`./${path}`, import.meta.url).href,
+    locateFile: (path: string) => "/"+path,
     ...options,
   };
   return (
