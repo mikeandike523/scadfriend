@@ -1,9 +1,11 @@
+// App.tsx
+import { css, keyframes } from "@emotion/react";
 import Editor, { OnMount } from "@monaco-editor/react";
-import { useRef, useState, useEffect, useMemo } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { Button, Div } from "style-props-html";
 import * as THREE from "three";
-import { STLLoader } from "three/examples/jsm/loaders/STLLoader.js";
 import { OrbitControls } from "three/examples/jsm/controls/OrbitControls.js";
+import { STLLoader } from "three/examples/jsm/loaders/STLLoader.js";
 
 import Color from "color";
 
@@ -16,7 +18,6 @@ import "@fontsource/fira-code/index.css";
 
 import "./App.css";
 import exampleCode from "./assets/example.scad?raw";
-import OpenSCAD from "./openscad";
 import { useRegisterOpenSCADLanguage } from "./openscad-lang";
 import { identifyParts, OpenSCADPart } from "./openscad-parsing";
 
@@ -30,32 +31,27 @@ function rgbaByteToInt(r: number, g: number, b: number, a: number) {
 }
 
 /**
- *
- * Takes some valid css color string and converts to an RGBA integer
- *
- * @param colorString
- * @param defaultColor
+ * Takes some valid CSS color string and converts it to an RGBA integer.
  */
 function getColorOrDefault(
   colorString: string | undefined,
   defaultColor = 0xff00ff
 ): number {
-  console.log(colorString)
   if (!colorString) return defaultColor;
   const color = Color(colorString);
   const { r, g, b, a } = {
     r: color.red(),
     g: color.green(),
     b: color.blue(),
-    a: color.alpha()
-  }
-  return rgbaByteToInt(
-    r,
-    g,
-    b,
-    Math.round(a * 255)
-  );
+    a: color.alpha(),
+  };
+  return rgbaByteToInt(r, g, b, Math.round(a * 255));
 }
+
+const spinnerAnimation = keyframes`
+  0% { transform: rotate(0deg); }
+  100% { transform: rotate(360deg); }
+`;
 
 function App() {
   useRegisterOpenSCADLanguage();
@@ -73,48 +69,33 @@ function App() {
 
   // Create persistent Three.js objects (scene, camera, renderer, and STLLoader) using useMemo.
   const threeObjects = useMemo(() => {
-    // Create the scene and set a background color.
     const scene = new THREE.Scene();
     scene.background = new THREE.Color(0xbfd1e5);
-
-    // Create the camera.
     const camera = new THREE.PerspectiveCamera(75, 1, 0.1, 1000);
     camera.position.set(0, 0, 100);
-
-    // Create the renderer.
     const renderer = new THREE.WebGLRenderer({ antialias: true });
-    renderer.shadowMap.enabled = true; // enable shadow mapping
-
-    // Create the STL loader.
+    renderer.shadowMap.enabled = true;
     const loader = new STLLoader();
-
     return { scene, camera, renderer, loader };
   }, []);
 
-
-
-  // When the viewer pane (Div) mounts, append the Three.js renderer's DOM element.
+  // Append Three.js canvas to the viewer ref.
   useEffect(() => {
     if (viewerRef.current) {
-      const { clientWidth, clientHeight } = viewerRef.current;
+      const { width:clientWidth, height:clientHeight } = viewerRef.current.getBoundingClientRect();
       threeObjects.renderer.setSize(clientWidth, clientHeight);
-      // Update the camera aspect ratio.
       threeObjects.camera.aspect = clientWidth / clientHeight;
       threeObjects.camera.updateProjectionMatrix();
       viewerRef.current.appendChild(threeObjects.renderer.domElement);
-
-      // Initialize OrbitControls on the camera and renderer DOM element.
       orbitControlsRef.current = new OrbitControls(
         threeObjects.camera,
         threeObjects.renderer.domElement
       );
-      // Optional: enable damping (inertia) for smoother controls.
       orbitControlsRef.current.enableDamping = true;
       orbitControlsRef.current.dampingFactor = 0.05;
     }
     const current = viewerRef.current;
     return () => {
-      // Dispose OrbitControls on unmount.
       if (orbitControlsRef.current) {
         orbitControlsRef.current.dispose();
         orbitControlsRef.current = null;
@@ -128,37 +109,30 @@ function App() {
     };
   }, [threeObjects.renderer, threeObjects.camera]);
 
-  // Animation loop.
+  // Three.js animation loop.
   useEffect(() => {
     const animate = () => {
       requestAnimationFrame(animate);
-      // Update orbit controls (if damping is enabled).
       orbitControlsRef.current?.update();
       threeObjects.renderer.render(threeObjects.scene, threeObjects.camera);
     };
     animate();
   }, [threeObjects.renderer, threeObjects.scene, threeObjects.camera]);
 
-  // Update the Three.js scene by clearing existing meshes and adding new ones.
+  // Update the Three.js scene by adding rendered parts.
   const updateThreeScene = () => {
     const { scene, loader, camera } = threeObjects;
-
-    // Remove existing meshes (but keep lights and other scene objects).
-    // Note: This simple traverse might remove children while iterating;
-    // in a production environment, you might wish to filter the list first.
+    // Remove existing meshes.
     scene.traverse((child) => {
       if ((child as THREE.Mesh).isMesh) {
         scene.remove(child);
       }
     });
-
-    // Add a new mesh for each completed part.
+    // Add new mesh for each completed part.
     Object.entries(completedModelRef.current).forEach(([name, part]) => {
       if (part.stl) {
         try {
-          // Parse the STL binary data into a geometry.
           const geometry = loader.parse(part.stl.buffer);
-          // Use a material that reacts to light.
           const material = new THREE.MeshBasicMaterial({
             color: getColorOrDefault(part.color),
           });
@@ -169,8 +143,7 @@ function App() {
         }
       }
     });
-
-    // Compute the bounding box of all meshes in the scene.
+    // Auto-adjust the camera to view the model.
     const bbox = new THREE.Box3();
     scene.traverse((child) => {
       if (child instanceof THREE.Mesh) {
@@ -178,24 +151,19 @@ function App() {
       }
     });
     if (!bbox.isEmpty()) {
-      // Get the center and size of the bounding box.
       const center = new THREE.Vector3();
       bbox.getCenter(center);
       const size = new THREE.Vector3();
       bbox.getSize(size);
       const maxDim = Math.max(size.x, size.y, size.z);
-      // Compute the camera distance based on the fov and max dimension.
       const fov = camera.fov * (Math.PI / 180);
       let cameraDistance = maxDim / (2 * Math.tan(fov / 2));
-      cameraDistance *= 1.5; // extra margin
-
-      // For a 3/4 view, offset the camera in all axes.
+      cameraDistance *= 1.5;
       const offset = new THREE.Vector3(1, 1, 1)
         .normalize()
         .multiplyScalar(cameraDistance);
       camera.position.copy(center).add(offset);
       camera.lookAt(center);
-      // Update OrbitControls' target.
       if (orbitControlsRef.current) {
         orbitControlsRef.current.target.copy(center);
         orbitControlsRef.current.update();
@@ -204,7 +172,6 @@ function App() {
   };
 
   const handleEditorDidMount: OnMount = (editor) => {
-    // Load code from localStorage when the editor mounts.
     const savedCode = localStorage.getItem(LOCAL_STORAGE_KEY);
     if (savedCode) {
       editor.setValue(savedCode);
@@ -213,7 +180,6 @@ function App() {
       editor.setValue(exampleCode);
       setEditorValue(exampleCode);
     }
-    // Set the cursor position to the end of the content.
     const model = editor.getModel();
     if (model) {
       const lastLineNumber = model.getLineCount();
@@ -244,68 +210,72 @@ function App() {
     setMessages([]);
   };
 
+  /**
+   * Offloads rendering for a given part to a worker.
+   */
+  const renderPartInWorker = (partName: string, part: OpenSCADPart) => {
+    return new Promise<void>((resolve, reject) => {
+      // Create a new worker using Vite’s built-in worker support.
+      const worker = new Worker(
+        new URL("./openscad.worker.ts", import.meta.url),
+        { type: "module" }
+      );
+
+      // Listen for messages from the worker.
+      worker.onmessage = (event) => {
+        const data = event.data;
+        if (data.type === "log") {
+          log(`[${partName}] ${data.message}`);
+        } else if (data.type === "result") {
+          completedModelRef.current[partName] = { ...part, stl: data.stl };
+          log(`Render completed for part: "${partName}".`);
+          worker.terminate();
+          resolve();
+        } else if (data.type === "error") {
+          log(`Error rendering part ${partName}: ${data.error}`);
+          worker.terminate();
+          reject(new Error(data.error));
+        }
+      };
+
+      worker.onerror = (err) => {
+        log(`Worker error rendering part ${partName}: ${err.message}`);
+        worker.terminate();
+        reject(err);
+      };
+
+      // Post the render command to the worker.
+      worker.postMessage({ command: "render", partName, part });
+    });
+  };
+
+  /**
+   * Initiates rendering of all detected parts by delegating to the worker.
+   */
   const renderModel = async () => {
     if (isProcessing) {
       log("Already processing, please wait...");
       return;
     }
-
     setIsProcessing(true);
     clearLogs();
     completedModelRef.current = {};
 
     const detectedParts = identifyParts(editorValue);
-
-    console.log(detectedParts)
-
     log(`Found Parts: ${Object.keys(detectedParts).join(", ")}`);
 
-    async function renderPart(partName: string, part: OpenSCADPart) {
-      let startTime = performance.now();
-      log(`Processing part ${partName}...`);
-      log("Initializing OpenSCAD...");
-      const instance = await OpenSCAD({ noInitialRun: true });
-      log(`${performance.now() - startTime}ms to initialize OpenSCAD`);
-      startTime = performance.now();
-      log("Writing input file...");
-      startTime = performance.now();
-      instance.FS.writeFile("/input.scad", part.ownSourceCode);
-      log(`${performance.now() - startTime}ms to write input file`);
-      startTime = performance.now();
-      log("Performing render...");
-
-      const args = [
-        "/input.scad",
-        "--viewall",
-        "--autocenter",
-        "--render",
-        "--export-format=binstl",
-      ];
-      const filename = `part_${partName}.stl`;
-      
-      args.push("-o", filename);
-      instance.callMain(args);
-      log(`${performance.now() - startTime}ms to perform render`);
-      startTime = performance.now();
-      log("Reading output...");
-      // Read the output 3D-model into a JS byte-array.
-      const output = instance.FS.readFile("/" + filename, {
-        encoding: "binary",
-      }) as Uint8Array;
-      log(`${performance.now() - startTime}ms to read output`);
-      completedModelRef.current[partName] = { ...part, stl: output };
-      log(`Render completed for part: "${partName}".`);
+    try {
+      // Process parts sequentially (you can also do this concurrently if desired).
+      for (const [name, part] of Object.entries(detectedParts)) {
+        await renderPartInWorker(name, part);
+      }
+      log("Rendering complete.");
+      updateThreeScene();
+    } catch (error) {
+      log(`Rendering failed: ${error}`);
+    } finally {
+      setIsProcessing(false);
     }
-
-    for (const [name, part] of Object.entries(detectedParts)) {
-      await renderPart(name, part);
-    }
-
-
-    log("Rendering complete.");
-    // Update the Three.js scene with the newly rendered STL parts.
-    updateThreeScene();
-    setIsProcessing(false);
   };
 
   return (
@@ -353,7 +323,6 @@ function App() {
       >
         {/* Render Controls */}
         <Div display="flex" flexDirection="row" gap="8px" padding="8px">
-
           <Button
             disabled={isProcessing}
             flex={1}
@@ -364,10 +333,35 @@ function App() {
             Render
           </Button>
         </Div>
-        {/* ThreeJS Model Viewer Div */}
-        {/* The viewerRef is attached here so we can inject the Three.js canvas */}
-        <Div background="skyblue" ref={viewerRef} />
-        {/* Console Div */}
+        {/* Three.js Model Viewer */}
+        <Div background="skyblue" position="relative" width="100%" height="100%">
+          <Div ref={viewerRef} width="100%" height="100%"></Div>
+          <Div
+            position="absolute"
+            top="0"
+            left="0"
+            right="0"
+            bottom="0"
+            display="flex"
+            pointerEvents={isProcessing ? "auto" : "none"}
+            opacity={isProcessing ? 1 : 0}
+            transition="opacity 0.5s ease-in-out"
+            alignItems="center"
+            justifyContent="center"
+          >
+            <Div
+              width="48px"
+              height="48px"
+              css={css`
+                border-radius: 50%;
+                border: 4px solid blue;
+                border-top: 4px solid transparent;
+                animation: ${spinnerAnimation} 2s linear infinite;
+              `}
+            ></Div>
+          </Div>
+        </Div>
+        {/* Console Output */}
         <Div
           ref={consoleDivRef}
           overflow="auto"
