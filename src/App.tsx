@@ -244,7 +244,7 @@ function App() {
     setMessages([]);
   };
 
-  const renderModel = async (quality: "draft" | "full" = "draft") => {
+  const renderModel = async () => {
     if (isProcessing) {
       log("Already processing, please wait...");
       return;
@@ -256,16 +256,20 @@ function App() {
 
     const detectedParts = identifyParts(editorValue);
 
-    console.log(detectedParts)
-
     log(`Found Parts: ${Object.keys(detectedParts).join(", ")}`);
 
     async function renderPart(partName: string, part: OpenSCADPart) {
+      let startTime = performance.now();
       log(`Processing part ${partName}...`);
       log("Initializing OpenSCAD...");
       const instance = await OpenSCAD({ noInitialRun: true });
+      log(`${performance.now() - startTime}ms to initialize OpenSCAD`);
+      startTime = performance.now();
       log("Writing input file...");
+      startTime = performance.now();
       instance.FS.writeFile("/input.scad", part.ownSourceCode);
+      log(`${performance.now() - startTime}ms to write input file`);
+      startTime = performance.now();
       log("Performing render...");
 
       const args = [
@@ -274,25 +278,19 @@ function App() {
         "--autocenter",
         "--render",
         "--export-format=binstl",
+        "--enable=manifold"
       ];
-      let filename: string;
-      switch (quality) {
-        case "draft":
-          filename = "draft.stl";
-          break;
-        case "full":
-          filename = "final.stl";
-          args.push("--enable=manifold");
-          break;
-      }
+      const filename=`part_${partName}.stl`;
       args.push("-o", filename);
       instance.callMain(args);
+      log(`${performance.now() - startTime}ms to perform render`);
+      startTime = performance.now();
       log("Reading output...");
       // Read the output 3D-model into a JS byte-array.
       const output = instance.FS.readFile("/" + filename, {
         encoding: "binary",
       }) as Uint8Array;
-
+      log(`${performance.now() - startTime}ms to read output`);
       completedModelRef.current[partName] = { ...part, stl: output };
       log(`Render completed for part: "${partName}".`);
     }
@@ -300,6 +298,7 @@ function App() {
     for (const [name, part] of Object.entries(detectedParts)) {
       await renderPart(name, part);
     }
+
 
     log("Rendering complete.");
     // Update the Three.js scene with the newly rendered STL parts.
@@ -352,26 +351,15 @@ function App() {
       >
         {/* Render Controls */}
         <Div display="flex" flexDirection="row" gap="8px" padding="8px">
-          <Div flex={0} fontSize="150%">
-            Render:
-          </Div>
+
           <Button
             disabled={isProcessing}
             flex={1}
             fontSize="150%"
-            onClick={() => renderModel("draft")}
+            onClick={renderModel}
             cursor={isProcessing ? "progress" : "pointer"}
           >
-            Draft Quality
-          </Button>
-          <Button
-            disabled={isProcessing}
-            flex={1}
-            fontSize="150%"
-            onClick={() => renderModel("full")}
-            cursor={isProcessing ? "progress" : "pointer"}
-          >
-            Final Quality
+            Render
           </Button>
         </Div>
         {/* ThreeJS Model Viewer Div */}
