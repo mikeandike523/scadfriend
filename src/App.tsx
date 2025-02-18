@@ -1,5 +1,5 @@
 import Editor, { OnMount } from "@monaco-editor/react";
-import { useEffect, useRef, useState } from "react";
+import { useRef, useState } from "react";
 import { Button, Div } from "style-props-html";
 
 import "@fontsource/fira-code/300.css";
@@ -11,8 +11,9 @@ import "@fontsource/fira-code/index.css";
 
 import "./App.css";
 import exampleCode from "./assets/example.scad?raw";
+import OpenSCAD from "./openscad";
 import { useRegisterOpenSCADLanguage } from "./openscad-lang";
-import OpenSCAD, { type OpenSCAD as SCADEngine } from "./openscad";
+import { identifyParts, OpenSCADPart } from "./openscad-parsing";
 
 const MAX_MESSAGES = 200;
 const LOCAL_STORAGE_KEY = "openscad-code";
@@ -22,20 +23,7 @@ function App() {
   const consoleDivRef = useRef<HTMLDivElement>(null);
   const [messages, setMessages] = useState<string[]>([]);
   const [editorValue, setEditorValue] = useState("");
-
-  const scadEngineRef = useRef<SCADEngine | null>(null);
-
-  async function startScadEngine() {
-    if (scadEngineRef.current === null) {
-      scadEngineRef.current = await OpenSCAD({
-        noInitialRun: true,
-      });
-    }
-  }
-
-  useEffect(() => {
-    startScadEngine();
-  }, []);
+  const [isProcessing, setIsProcessing] = useState(false);
 
   const handleEditorDidMount: OnMount = (editor) => {
     // Load code from localStorage when editor mounts
@@ -74,45 +62,92 @@ function App() {
     });
   };
 
-  const renderModel = async () => {
-    await startScadEngine();
+  const clearLogs = () => {
+    setMessages([]);
+  };
 
-    const instance = scadEngineRef.current;
+  const renderModel = async (quality: "draft" | "full" = "draft") => {
 
-    if (!instance) {
-      log("SCAD engine not ready yet.");
-      return;
+    if(isProcessing) {
+      log("Already processing, please wait...");
+      return
     }
 
-    log("Rendering...");
+    setIsProcessing(true);
 
-    const filename = "design.stl";
+    clearLogs();
+    
+    const detectedParts = identifyParts(editorValue);
 
-    // Write a file to the filesystem
-    instance.FS.writeFile("/input.scad", editorValue); // OpenSCAD script to generate a 10mm cube
+    log(`Found Parts: ${Object.keys(detectedParts).join(", ")}`);
 
-    log("Performing render...");
+    async function renderPart(partName: string,part:OpenSCADPart) {
+      
+      log(`Processing part ${partName}...`);
+      
+      log("Initializing OpenSCAD...");
+  
 
-    // Run like a command-line program with arguments
-    instance.callMain(["/input.scad", "--enable=manifold", "-o", filename]); // manifold is faster at rendering
+      // It appears from prior testing that the WASM implementation
+      // Does not support reuse
+      // It will be too difficult to change this at this time
+      // Maybe I should raise a github issue
+      const instance = await OpenSCAD({
+        noInitialRun: true,
+      });
+  
+      log("Writing input file...");
+  
+      let filename;
+  
+      // Write a file to the filesystem
+      instance.FS.writeFile("/input.scad", part.ownSourceCode); // OpenSCAD script to generate a 10mm cube
+  
+      log("Performing render...");
+  
+      const args = ["/input.scad", "--viewall", "--autocenter", "--render"];
+  
+      switch (quality) {
+        case "draft":
+          filename = "draft.stl";
+          break;
+        case "full":
+          filename = "final.stl";
+          args.push("--enable=manifold");
+          break;
+      }
+  
+      args.push("-o", filename);
+  
+      // Run like a command-line program with arguments
+      instance.callMain(args);
+  
+      log("Reading output...");
+  
+      // Read the output 3D-model into a JS byte-array
+      const output = instance.FS.readFile("/" + filename);
+  
+      log("Downloading files...");
+  
+      // Generate a link to output 3D-model and download the output STL file
+      const link = document.createElement("a");
+      link.href = URL.createObjectURL(
+        new Blob([output], { type: "application/octet-stream" })
+      );
+      link.download = `${partName}-${filename}`;
+      document.body.append(link);
+      link.click();
+      link.remove();
+      log("Render completed.");
+    }
 
-    log("Reading output...");
+    const entries = Object.entries(detectedParts);
 
-    // Read the output 3D-model into a JS byte-array
-    const output = instance.FS.readFile("/" + filename);
+    for(const [name, part] of entries) {
+      await renderPart(name, part);
+    }
 
-    log("Downloading files");
-
-    // Generate a link to output 3D-model and download the output STL file
-    const link = document.createElement("a");
-    link.href = URL.createObjectURL(
-      new Blob([output], { type: "application/octet-stream" })
-    );
-    link.download = filename;
-    document.body.append(link);
-    link.click();
-    link.remove();
-    log("Render completed.");
+    setIsProcessing(false);
   };
 
   return (
@@ -158,10 +193,32 @@ function App() {
         gridTemplateRows="auto 1fr 1fr"
         gridTemplateColumns="1fr"
       >
-        {/* Preview and Render Controls */}
-        <Div display="flex" flexDirection="row">
-          <Button flex={1} fontSize="200%" onClick={renderModel}>
-            Render
+        {/* Render Controls */}
+        <Div display="flex" flexDirection="row" gap="8px" padding="8px">
+          <Div flex={0} fontSize="150%">
+            Render:
+          </Div>
+          <Button
+            disabled={isProcessing}
+            flex={1}
+            fontSize="150%"
+            onClick={() => {
+              renderModel("draft");
+            }}
+            cursor={isProcessing ? "progress" : "pointer"}
+          >
+            Draft Quality
+          </Button>
+          <Button
+            disabled={isProcessing}
+            flex={1}
+            fontSize="150%"
+            onClick={() => {
+              renderModel("full");
+            }}
+            cursor={isProcessing ? "progress" : "pointer"}
+          >
+            Final Quality
           </Button>
         </Div>
         {/* ThreeJS Model Viewer Div */}
