@@ -1,8 +1,8 @@
 // App.tsx
 import { css, keyframes } from "@emotion/react";
 import Editor, { OnMount } from "@monaco-editor/react";
-import { useEffect, useRef, useState } from "react";
-import { Button, Div, H1 } from "style-props-html";
+import { useCallback, useEffect, useRef, useState } from "react";
+import { Button, Div, H1, I, Input, Label } from "style-props-html";
 import * as THREE from "three";
 import { OrbitControls } from "three/examples/jsm/controls/OrbitControls.js";
 import { STLLoader } from "three/examples/jsm/loaders/STLLoader.js";
@@ -54,6 +54,10 @@ const spinnerAnimation = keyframes`
   100% { transform: rotate(360deg); }
 `;
 
+type PartSettings = {
+  visible: boolean;
+};
+
 function App() {
   useRegisterOpenSCADLanguage();
   const consoleDivRef = useRef<HTMLDivElement>(null);
@@ -65,6 +69,9 @@ function App() {
   const [renderedAtLeastOnce, setRenderedAtLeastOnce] = useState(false);
   // For later export, we keep the completed parts in a ref.
   const completedModelRef = useRef<{ [name: string]: OpenSCADPartWithSTL }>({});
+  const [partSettings, setPartSettings] = useState<{
+    [name: string]: PartSettings;
+  }>({});
 
   // Create a ref to store the OrbitControls instance.
   const orbitControlsRef = useRef<OrbitControls | null>(null);
@@ -187,35 +194,32 @@ function App() {
       }
     });
     if (!bbox.isEmpty()) {
-        const center = new THREE.Vector3();
-        bbox.getCenter(center);
-        const size = new THREE.Vector3();
-        bbox.getSize(size);
-        const maxDim = Math.max(size.x, size.y, size.z);
-        const fov = camera.fov * (Math.PI / 180);
-        let cameraDistance = maxDim / (2 * Math.tan(fov / 2));
-        cameraDistance *= 1.5;
-        const offset = new THREE.Vector3(1, 1, 1)
-          .normalize()
-          .multiplyScalar(cameraDistance);
-        camera.position.copy(center).add(offset);
-        camera.lookAt(center);
-        if (orbitControlsRef.current) {
-          orbitControlsRef.current.target.copy(center);
-          orbitControlsRef.current.update();
-        }
-
+      const center = new THREE.Vector3();
+      bbox.getCenter(center);
+      const size = new THREE.Vector3();
+      bbox.getSize(size);
+      const maxDim = Math.max(size.x, size.y, size.z);
+      const fov = camera.fov * (Math.PI / 180);
+      let cameraDistance = maxDim / (2 * Math.tan(fov / 2));
+      cameraDistance *= 1.5;
+      const offset = new THREE.Vector3(1, 1, 1)
+        .normalize()
+        .multiplyScalar(cameraDistance);
+      camera.position.copy(center).add(offset);
+      camera.lookAt(center);
+      if (orbitControlsRef.current) {
+        orbitControlsRef.current.target.copy(center);
+        orbitControlsRef.current.update();
+      }
     }
-  }
+  };
 
   // Update the Three.js scene by adding rendered parts.
   const updateThreeScene = () => {
     const threeObjects = threeObjectsRef.current;
     if (!threeObjects) return;
 
-    const { scene, loader} = threeObjects;
-
-
+    const { scene, loader } = threeObjects;
 
     traverseSyncChildrenFirst(scene, (node: THREE.Object3D) => {
       if (node instanceof THREE.Mesh) {
@@ -238,6 +242,7 @@ function App() {
             color: getColorOrDefault(part.color),
           });
           const mesh = new THREE.Mesh(geometry, material);
+          mesh.name = name;
           mesh.castShadow = true;
           mesh.receiveShadow = true;
           scene.add(mesh);
@@ -246,10 +251,35 @@ function App() {
         }
       }
     });
-    if(!renderedAtLeastOnce){
+    if (!renderedAtLeastOnce) {
       goToDefaultView();
     }
   };
+
+  const updateThreeScenePartsVisibility = useCallback(() => {
+    const threeObjects = threeObjectsRef.current;
+    if (!threeObjects) return;
+
+    const { scene } = threeObjects;
+
+
+    for (const child of scene.children) {
+      if (child instanceof THREE.Mesh) {
+        const partName = child.name;
+        const settings = partSettings[partName];
+        if (settings) {
+          child.visible = settings.visible;
+        } else {
+          child.visible = false;
+        }
+      }
+    }
+  },[partSettings])
+
+  useEffect(() => {
+    updateThreeScenePartsVisibility();
+  }, [partSettings, updateThreeScenePartsVisibility]);
+
 
   const handleEditorDidMount: OnMount = (editor) => {
     const savedCode = localStorage.getItem(LOCAL_STORAGE_KEY);
@@ -310,7 +340,7 @@ function App() {
           completedModelRef.current[partName] = { ...part, stl: data.stl };
           log(`Render completed for part: "${partName}".`);
           worker.terminate();
-          setRenderedAtLeastOnce(true);
+
           resolve();
         } else if (data.type === "error") {
           log(`Error rendering part ${partName}: ${data.error}`);
@@ -361,6 +391,20 @@ function App() {
       for (const [name, part] of Object.entries(detectedParts)) {
         await renderPartInWorker(name, part);
       }
+      for (const partName of Object.keys(completedModelRef.current)) {
+        if (!(partName in partSettings)) {
+          partSettings[partName] = {
+            visible: true,
+          };
+        }
+      }
+      for (const partName of Object.keys(partSettings)) {
+        if (!(partName in completedModelRef.current)) {
+          delete partSettings[partName];
+        }
+      }
+      setPartSettings({ ...partSettings });
+      setRenderedAtLeastOnce(true);
       log("Rendering complete.");
       updateThreeScene();
     } catch (error) {
@@ -379,9 +423,10 @@ function App() {
       justifyContent="flex-start"
       height="100%"
     >
-      <Div height="100%" flex={1.5}>
+      <Div height="100%" flex={1}>
         <Editor
           options={{
+            wordWrap: "on",
             fontSize: 18,
             fontFamily: "'Fira Code', monospace",
             fontLigatures: true,
@@ -411,7 +456,7 @@ function App() {
         height="100%"
         flex={1}
         display="grid"
-        gridTemplateRows="auto 1fr 1fr"
+        gridTemplateRows="auto 1.5fr 1fr"
         gridTemplateColumns="1fr"
       >
         {/* Render Controls */}
@@ -426,86 +471,118 @@ function App() {
             Render
           </Button>
         </Div>
-        {/* Three.js Model Viewer */}
+        {/* Three.js Model Viewer And Item Visibility Checkboxes */}
         <Div
-          background="skyblue"
-          position="relative"
           width="100%"
           height="100%"
+          display="grid"
+          gridTemplateRows="1fr"
+          gridTemplateColumns="1fr 3fr"
         >
-          <Div ref={viewerRef} width="100%" height="100%"></Div>
           <Div
-            position="absolute"
-            top="0"
-            left="0"
-            right="0"
-            bottom="0"
-            display="flex"
-            pointerEvents={isProcessing ? "auto" : "none"}
-            opacity={isProcessing ? 1 : 0}
-            transition="opacity 0.5s ease-in-out"
-            alignItems="center"
-            justifyContent="center"
-          >
-            <Div
-              width="48px"
-              height="48px"
-              css={css`
-                border-radius: 50%;
-                border: 4px solid blue;
-                border-top: 4px solid transparent;
-                animation: ${spinnerAnimation} 2s linear infinite;
-              `}
-            ></Div>
-          </Div>
-          <Div
-            position="absolute"
-            top="0"
-            left="0"
-            right="0"
-            bottom="0"
-            display="flex"
-            pointerEvents={
-              renderedAtLeastOnce || isProcessing ? "none" : "auto"
-            }
-            opacity={renderedAtLeastOnce || isProcessing ? 0 : 1}
-            transition="opacity 0.5s ease-in-out"
-            alignItems="center"
-            justifyContent="center"
-            flexDirection="column"
-          >
-            <H1 color="darkblue" textAlign="center">
-              Nothing to show.
-            </H1>
-            <H1 color="darkblue" textAlign="center">
-              Press "Render" to start.
-            </H1>
-          </Div>
-          <Div
-            position="absolute"
-            bottom="0"
-            right="0"
+            background="white"
             padding="8px"
-            gap="8px"
             display="flex"
-            flexDirection="row"
+            flexDirection="column"
+            gap="8px"
           >
-            <Button
-              width="2.5rem"
-              height="2.5rem"
+            {Object.keys(partSettings).length > 0 ? (
+              <>
+                {Object.entries(partSettings).map(([name, settings], index) => (
+                  <Label whiteSpace="nowrap" key={index}>
+                    <Input
+                      type="checkbox"
+                      checked={settings.visible}
+                      onChange={() => {
+                        const currentValue = partSettings[name].visible;
+                        partSettings[name].visible = !currentValue;
+                        setPartSettings({ ...partSettings });
+                      }}
+                    />
+                    &nbsp;
+                    {name}
+                  </Label>
+                ))}
+              </>
+            ) : (
+              <I>No parts yet.</I>
+            )}
+          </Div>
+          <Div background="skyblue" position="relative" height="100%">
+            <Div ref={viewerRef} width="100%" height="100%"></Div>
+            <Div
+              position="absolute"
+              top="0"
+              left="0"
+              right="0"
+              bottom="0"
               display="flex"
+              pointerEvents={isProcessing ? "auto" : "none"}
+              opacity={isProcessing ? 1 : 0}
+              transition="opacity 0.5s ease-in-out"
               alignItems="center"
               justifyContent="center"
-              title="Default View"
-              borderRadius="50%"
-              onClick={goToDefaultView}
             >
+              <Div
+                width="48px"
+                height="48px"
+                css={css`
+                  border-radius: 50%;
+                  border: 4px solid blue;
+                  border-top: 4px solid transparent;
+                  animation: ${spinnerAnimation} 2s linear infinite;
+                `}
+              ></Div>
+            </Div>
+            <Div
+              position="absolute"
+              top="0"
+              left="0"
+              right="0"
+              bottom="0"
+              display="flex"
+              pointerEvents={
+                renderedAtLeastOnce || isProcessing ? "none" : "auto"
+              }
+              opacity={renderedAtLeastOnce || isProcessing ? 0 : 1}
+              transition="opacity 0.5s ease-in-out"
+              alignItems="center"
+              justifyContent="center"
+              flexDirection="column"
+            >
+              <H1 color="darkblue" textAlign="center">
+                Nothing to show.
+              </H1>
+              <H1 color="darkblue" textAlign="center">
+                Press "Render" to start.
+              </H1>
+            </Div>
+            <Div
+              position="absolute"
+              bottom="0"
+              right="0"
+              padding="8px"
+              gap="8px"
+              display="flex"
+              flexDirection="row"
+            >
+              <Button
+                width="2.5rem"
+                height="2.5rem"
+                display="flex"
+                alignItems="center"
+                justifyContent="center"
+                title="Default View"
+                borderRadius="50%"
+                onClick={goToDefaultView}
+              >
                 <FaHome
                   style={{
                     fontSize: "1.5rem",
                   }}
                 />
-            </Button>
+              </Button>
+            </Div>
           </Div>
         </Div>
         {/* Console Output */}
