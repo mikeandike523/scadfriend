@@ -1,7 +1,7 @@
 // App.tsx
 import { css, keyframes } from "@emotion/react";
 import Editor, { OnMount } from "@monaco-editor/react";
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { Button, Div } from "style-props-html";
 import * as THREE from "three";
 import { OrbitControls } from "three/examples/jsm/controls/OrbitControls.js";
@@ -67,8 +67,15 @@ function App() {
   // Create a ref to store the OrbitControls instance.
   const orbitControlsRef = useRef<OrbitControls | null>(null);
 
-  // Create persistent Three.js objects (scene, camera, renderer, and STLLoader) using useMemo.
-  const threeObjects = useMemo(() => {
+  // Create a ref for Three.js objects so that they are only initialized once.
+  const threeObjectsRef = useRef<{
+    scene: THREE.Scene;
+    camera: THREE.PerspectiveCamera;
+    renderer: THREE.WebGLRenderer;
+    loader: STLLoader;
+  } | null>(null);
+
+  if (!threeObjectsRef.current) {
     const scene = new THREE.Scene();
     scene.background = new THREE.Color(0xbfd1e5);
     const camera = new THREE.PerspectiveCamera(75, 1, 0.1, 1000);
@@ -76,21 +83,21 @@ function App() {
     const renderer = new THREE.WebGLRenderer({ antialias: true });
     renderer.shadowMap.enabled = true;
     const loader = new STLLoader();
-    return { scene, camera, renderer, loader };
-  }, []);
+    threeObjectsRef.current = { scene, camera, renderer, loader };
+  }
 
   // Append Three.js canvas to the viewer ref.
   useEffect(() => {
-    if (viewerRef.current) {
-      const { width:clientWidth, height:clientHeight } = viewerRef.current.getBoundingClientRect();
-      threeObjects.renderer.setSize(clientWidth, clientHeight);
-      threeObjects.camera.aspect = clientWidth / clientHeight;
-      threeObjects.camera.updateProjectionMatrix();
-      viewerRef.current.appendChild(threeObjects.renderer.domElement);
-      orbitControlsRef.current = new OrbitControls(
-        threeObjects.camera,
-        threeObjects.renderer.domElement
-      );
+    const threeObjects = threeObjectsRef.current;
+    if (viewerRef.current && threeObjects) {
+      const { renderer, camera } = threeObjects;
+      const { width: clientWidth, height: clientHeight } =
+        viewerRef.current.getBoundingClientRect();
+      renderer.setSize(clientWidth, clientHeight);
+      camera.aspect = clientWidth / clientHeight;
+      camera.updateProjectionMatrix();
+      viewerRef.current.appendChild(renderer.domElement);
+      orbitControlsRef.current = new OrbitControls(camera, renderer.domElement);
       orbitControlsRef.current.enableDamping = true;
       orbitControlsRef.current.dampingFactor = 0.05;
     }
@@ -102,32 +109,58 @@ function App() {
       }
       if (
         current &&
+        threeObjects &&
         threeObjects.renderer.domElement.parentElement === current
       ) {
         current.removeChild(threeObjects.renderer.domElement);
       }
     };
-  }, [threeObjects.renderer, threeObjects.camera]);
+  }, []);
 
   // Three.js animation loop.
   useEffect(() => {
     const animate = () => {
       requestAnimationFrame(animate);
       orbitControlsRef.current?.update();
-      threeObjects.renderer.render(threeObjects.scene, threeObjects.camera);
+      if (threeObjectsRef.current) {
+        threeObjectsRef.current.renderer.render(
+          threeObjectsRef.current.scene,
+          threeObjectsRef.current.camera
+        );
+      }
     };
     animate();
-  }, [threeObjects.renderer, threeObjects.scene, threeObjects.camera]);
+  }, []);
 
   // Update the Three.js scene by adding rendered parts.
   const updateThreeScene = () => {
+    const threeObjects = threeObjectsRef.current;
+    if (!threeObjects) return;
+
     const { scene, loader, camera } = threeObjects;
-    // Remove existing meshes.
-    scene.traverse((child) => {
-      if ((child as THREE.Mesh).isMesh) {
-        scene.remove(child);
+
+    function traverseSyncChildrenFirst(
+      node: THREE.Object3D,
+      callback: (node: THREE.Object3D) => void
+    ) {
+      for (const child of node.children) {
+        traverseSyncChildrenFirst(child, callback);
+      }
+      callback(node);
+    }
+
+    traverseSyncChildrenFirst(scene, (node: THREE.Object3D) => {
+      if (node instanceof THREE.Mesh) {
+        scene.remove(node);
       }
     });
+
+    for (const child of scene.children) {
+      if (child instanceof THREE.Mesh) {
+        scene.remove(child);
+      }
+    }
+
     // Add new mesh for each completed part.
     Object.entries(completedModelRef.current).forEach(([name, part]) => {
       if (part.stl) {
@@ -143,11 +176,10 @@ function App() {
         }
       }
     });
-    // Auto-adjust the camera to view the model.
     const bbox = new THREE.Box3();
-    scene.traverse((child) => {
-      if (child instanceof THREE.Mesh) {
-        bbox.expandByObject(child);
+    traverseSyncChildrenFirst(scene, (node: THREE.Object3D) => {
+      if (node instanceof THREE.Mesh) {
+        bbox.expandByObject(node);
       }
     });
     if (!bbox.isEmpty()) {
@@ -334,7 +366,12 @@ function App() {
           </Button>
         </Div>
         {/* Three.js Model Viewer */}
-        <Div background="skyblue" position="relative" width="100%" height="100%">
+        <Div
+          background="skyblue"
+          position="relative"
+          width="100%"
+          height="100%"
+        >
           <Div ref={viewerRef} width="100%" height="100%"></Div>
           <Div
             position="absolute"
