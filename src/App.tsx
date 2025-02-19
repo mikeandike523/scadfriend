@@ -2,7 +2,7 @@
 import { css, keyframes } from "@emotion/react";
 import Editor, { OnMount } from "@monaco-editor/react";
 import { useEffect, useRef, useState } from "react";
-import { Button, Div } from "style-props-html";
+import { Button, Div, H1 } from "style-props-html";
 import * as THREE from "three";
 import { OrbitControls } from "three/examples/jsm/controls/OrbitControls.js";
 import { STLLoader } from "three/examples/jsm/loaders/STLLoader.js";
@@ -16,6 +16,7 @@ import "@fontsource/fira-code/600.css";
 import "@fontsource/fira-code/700.css";
 import "@fontsource/fira-code/index.css";
 
+import { FaHome } from "react-icons/fa";
 import "./App.css";
 import exampleCode from "./assets/example.scad?raw";
 import { useRegisterOpenSCADLanguage } from "./openscad-lang";
@@ -61,6 +62,7 @@ function App() {
   const [messages, setMessages] = useState<string[]>([]);
   const [editorValue, setEditorValue] = useState("");
   const [isProcessing, setIsProcessing] = useState(false);
+  const [renderedAtLeastOnce, setRenderedAtLeastOnce] = useState(false);
   // For later export, we keep the completed parts in a ref.
   const completedModelRef = useRef<{ [name: string]: OpenSCADPartWithSTL }>({});
 
@@ -73,6 +75,8 @@ function App() {
     camera: THREE.PerspectiveCamera;
     renderer: THREE.WebGLRenderer;
     loader: STLLoader;
+    ambientLight: THREE.AmbientLight;
+    directionalLight: THREE.DirectionalLight;
   } | null>(null);
 
   if (!threeObjectsRef.current) {
@@ -83,7 +87,20 @@ function App() {
     const renderer = new THREE.WebGLRenderer({ antialias: true });
     renderer.shadowMap.enabled = true;
     const loader = new STLLoader();
-    threeObjectsRef.current = { scene, camera, renderer, loader };
+    const ambientLight = new THREE.AmbientLight(0xffffff, 0.25);
+    const directionalLight = new THREE.DirectionalLight(0xffffff, 1);
+    directionalLight.position.copy(camera.position);
+    camera.add(directionalLight);
+    scene.add(camera);
+    scene.add(ambientLight);
+    threeObjectsRef.current = {
+      scene,
+      camera,
+      renderer,
+      loader,
+      ambientLight,
+      directionalLight,
+    };
   }
 
   // Append Three.js canvas to the viewer ref.
@@ -127,6 +144,14 @@ function App() {
           threeObjectsRef.current.scene,
           threeObjectsRef.current.camera
         );
+        const directionalLight = threeObjectsRef.current.directionalLight;
+        directionalLight.position.copy(threeObjectsRef.current.camera.position);
+        if (orbitControlsRef.current) {
+          directionalLight.target.position.copy(
+            orbitControlsRef.current.target
+          );
+        }
+        directionalLight.target.updateMatrixWorld();
       }
     };
     animate();
@@ -140,22 +165,57 @@ function App() {
     });
   }, [shownMessages]);
 
+  function traverseSyncChildrenFirst(
+    node: THREE.Object3D,
+    callback: (node: THREE.Object3D) => void
+  ) {
+    for (const child of node.children) {
+      traverseSyncChildrenFirst(child, callback);
+    }
+    callback(node);
+  }
+
+  const goToDefaultView = () => {
+    const threeObjects = threeObjectsRef.current;
+    if (!threeObjects) return;
+
+    const { scene, camera } = threeObjects;
+    const bbox = new THREE.Box3();
+    traverseSyncChildrenFirst(scene, (node: THREE.Object3D) => {
+      if (node instanceof THREE.Mesh) {
+        bbox.expandByObject(node);
+      }
+    });
+    if (!bbox.isEmpty()) {
+        const center = new THREE.Vector3();
+        bbox.getCenter(center);
+        const size = new THREE.Vector3();
+        bbox.getSize(size);
+        const maxDim = Math.max(size.x, size.y, size.z);
+        const fov = camera.fov * (Math.PI / 180);
+        let cameraDistance = maxDim / (2 * Math.tan(fov / 2));
+        cameraDistance *= 1.5;
+        const offset = new THREE.Vector3(1, 1, 1)
+          .normalize()
+          .multiplyScalar(cameraDistance);
+        camera.position.copy(center).add(offset);
+        camera.lookAt(center);
+        if (orbitControlsRef.current) {
+          orbitControlsRef.current.target.copy(center);
+          orbitControlsRef.current.update();
+        }
+
+    }
+  }
+
   // Update the Three.js scene by adding rendered parts.
   const updateThreeScene = () => {
     const threeObjects = threeObjectsRef.current;
     if (!threeObjects) return;
 
-    const { scene, loader, camera } = threeObjects;
+    const { scene, loader} = threeObjects;
 
-    function traverseSyncChildrenFirst(
-      node: THREE.Object3D,
-      callback: (node: THREE.Object3D) => void
-    ) {
-      for (const child of node.children) {
-        traverseSyncChildrenFirst(child, callback);
-      }
-      callback(node);
-    }
+
 
     traverseSyncChildrenFirst(scene, (node: THREE.Object3D) => {
       if (node instanceof THREE.Mesh) {
@@ -174,40 +234,20 @@ function App() {
       if (part.stl) {
         try {
           const geometry = loader.parse(part.stl.buffer);
-          const material = new THREE.MeshBasicMaterial({
+          const material = new THREE.MeshPhongMaterial({
             color: getColorOrDefault(part.color),
           });
           const mesh = new THREE.Mesh(geometry, material);
+          mesh.castShadow = true;
+          mesh.receiveShadow = true;
           scene.add(mesh);
         } catch (error) {
           console.error(`Error parsing STL for part "${name}":`, error);
         }
       }
     });
-    const bbox = new THREE.Box3();
-    traverseSyncChildrenFirst(scene, (node: THREE.Object3D) => {
-      if (node instanceof THREE.Mesh) {
-        bbox.expandByObject(node);
-      }
-    });
-    if (!bbox.isEmpty()) {
-      const center = new THREE.Vector3();
-      bbox.getCenter(center);
-      const size = new THREE.Vector3();
-      bbox.getSize(size);
-      const maxDim = Math.max(size.x, size.y, size.z);
-      const fov = camera.fov * (Math.PI / 180);
-      let cameraDistance = maxDim / (2 * Math.tan(fov / 2));
-      cameraDistance *= 1.5;
-      const offset = new THREE.Vector3(1, 1, 1)
-        .normalize()
-        .multiplyScalar(cameraDistance);
-      camera.position.copy(center).add(offset);
-      camera.lookAt(center);
-      if (orbitControlsRef.current) {
-        orbitControlsRef.current.target.copy(center);
-        orbitControlsRef.current.update();
-      }
+    if(!renderedAtLeastOnce){
+      goToDefaultView();
     }
   };
 
@@ -270,6 +310,7 @@ function App() {
           completedModelRef.current[partName] = { ...part, stl: data.stl };
           log(`Render completed for part: "${partName}".`);
           worker.terminate();
+          setRenderedAtLeastOnce(true);
           resolve();
         } else if (data.type === "error") {
           log(`Error rendering part ${partName}: ${data.error}`);
@@ -297,11 +338,22 @@ function App() {
       log("Already processing, please wait...");
       return;
     }
-    setIsProcessing(true);
-    clearLogs();
-    completedModelRef.current = {};
 
     const detectedParts = identifyParts(editorValue);
+
+    if (!Object.keys(detectedParts).length) {
+      alert(
+        'Your design did not export any parts. Did you remember to use the "// @export" comment correctly?'
+      );
+      return;
+    }
+
+    clearLogs();
+
+    setIsProcessing(true);
+
+    completedModelRef.current = {};
+
     log(`Found Parts: ${Object.keys(detectedParts).join(", ")}`);
 
     try {
@@ -312,6 +364,7 @@ function App() {
       log("Rendering complete.");
       updateThreeScene();
     } catch (error) {
+      alert(`Rendering failed. Check the console for more details.`);
       log(`Rendering failed: ${error}`);
     } finally {
       setIsProcessing(false);
@@ -404,6 +457,55 @@ function App() {
                 animation: ${spinnerAnimation} 2s linear infinite;
               `}
             ></Div>
+          </Div>
+          <Div
+            position="absolute"
+            top="0"
+            left="0"
+            right="0"
+            bottom="0"
+            display="flex"
+            pointerEvents={
+              renderedAtLeastOnce || isProcessing ? "none" : "auto"
+            }
+            opacity={renderedAtLeastOnce || isProcessing ? 0 : 1}
+            transition="opacity 0.5s ease-in-out"
+            alignItems="center"
+            justifyContent="center"
+            flexDirection="column"
+          >
+            <H1 color="darkblue" textAlign="center">
+              Nothing to show.
+            </H1>
+            <H1 color="darkblue" textAlign="center">
+              Press "Render" to start.
+            </H1>
+          </Div>
+          <Div
+            position="absolute"
+            bottom="0"
+            right="0"
+            padding="8px"
+            gap="8px"
+            display="flex"
+            flexDirection="row"
+          >
+            <Button
+              width="2.5rem"
+              height="2.5rem"
+              display="flex"
+              alignItems="center"
+              justifyContent="center"
+              title="Default View"
+              borderRadius="50%"
+              onClick={goToDefaultView}
+            >
+                <FaHome
+                  style={{
+                    fontSize: "1.5rem",
+                  }}
+                />
+            </Button>
           </Div>
         </Div>
         {/* Console Output */}
