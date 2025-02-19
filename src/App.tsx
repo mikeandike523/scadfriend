@@ -132,6 +132,14 @@ function App() {
     animate();
   }, []);
 
+  const shownMessages = messages.join("\n");
+  useEffect(() => {
+    consoleDivRef.current?.scrollTo({
+      top: consoleDivRef.current?.scrollHeight ?? 0,
+      behavior: "smooth",
+    });
+  }, [shownMessages]);
+
   // Update the Three.js scene by adding rendered parts.
   const updateThreeScene = () => {
     const threeObjects = threeObjectsRef.current;
