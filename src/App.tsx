@@ -6,7 +6,6 @@ import { Button, Div, H1, I, Input, Label } from "style-props-html";
 import * as THREE from "three";
 import { OrbitControls } from "three/examples/jsm/controls/OrbitControls.js";
 import { STLLoader } from "three/examples/jsm/loaders/STLLoader.js";
-
 import Color from "color";
 
 import "@fontsource/fira-code/300.css";
@@ -21,6 +20,9 @@ import "./App.css";
 import exampleCode from "./assets/example.scad?raw";
 import { useRegisterOpenSCADLanguage } from "./openscad-lang";
 import { identifyParts, OpenSCADPart } from "./openscad-parsing";
+
+// Import our axis helper.
+import { createLabeledAxis } from "./AxisVisualizer";
 
 const MAX_MESSAGES = 200;
 const LOCAL_STORAGE_KEY = "openscad-code";
@@ -58,6 +60,16 @@ type PartSettings = {
   visible: boolean;
 };
 
+function traverseSyncChildrenFirst(
+  node: THREE.Object3D,
+  callback: (node: THREE.Object3D) => void
+) {
+  for (const child of node.children) {
+    traverseSyncChildrenFirst(child, callback);
+  }
+  callback(node);
+}
+
 function App() {
   useRegisterOpenSCADLanguage();
   const consoleDivRef = useRef<HTMLDivElement>(null);
@@ -84,11 +96,15 @@ function App() {
     loader: STLLoader;
     ambientLight: THREE.AmbientLight;
     directionalLight: THREE.DirectionalLight;
+    partsGroup: THREE.Group; // Group for rendered parts
   } | null>(null);
+
+  // Ref flag to ensure we add the axes only once.
+  const axesAdded = useRef(false);
 
   if (!threeObjectsRef.current) {
     const scene = new THREE.Scene();
-    scene.background = new THREE.Color(0xbfd1e5);
+    scene.background = new THREE.Color(0xaaaaaa);
     const camera = new THREE.PerspectiveCamera(75, 1, 0.1, 1000);
     camera.position.set(0, 0, 100);
     const renderer = new THREE.WebGLRenderer({ antialias: true });
@@ -100,6 +116,11 @@ function App() {
     camera.add(directionalLight);
     scene.add(camera);
     scene.add(ambientLight);
+    // Create a dedicated group for rendered parts.
+    const partsGroup = new THREE.Group();
+    partsGroup.name = "partsGroup";
+    scene.add(partsGroup);
+
     threeObjectsRef.current = {
       scene,
       camera,
@@ -107,6 +128,7 @@ function App() {
       loader,
       ambientLight,
       directionalLight,
+      partsGroup,
     };
   }
 
@@ -133,13 +155,130 @@ function App() {
       }
       if (
         current &&
-        threeObjects &&
-        threeObjects.renderer.domElement.parentElement === current
+        threeObjectsRef.current &&
+        threeObjectsRef.current.renderer.domElement.parentElement === current
       ) {
-        current.removeChild(threeObjects.renderer.domElement);
+        current.removeChild(threeObjectsRef.current.renderer.domElement);
       }
     };
   }, []);
+
+  // Add axes only once.
+  useEffect(() => {
+    const threeObjects = threeObjectsRef.current;
+    if (!threeObjects || axesAdded.current) return;
+    const { scene } = threeObjects;
+
+    const addAxis=(
+      direction: THREE.Vector3,
+      mainLineColor: THREE.Color,
+      tickColor: THREE.Color,
+      labelText: string,
+      /**
+       * Offset from the end of the axis
+       */
+      labelOffset: THREE.Vector3
+    )=>{
+      createLabeledAxis({
+        scene,
+        direction,
+        length: 100,
+        tickSpacing: 10,
+        tickLength: 2,
+        majorTickInterval: 5,
+        majorTickLength: 4,
+        mainLineColor,
+        tickColor,
+        labelText,
+        labelFontSize: 4,
+        labelOffset, // Float slight above
+        name: "__AXIS_" + labelText,
+        visible: false
+      });
+    }
+
+    // Create SCAD X-Axis (red)
+    addAxis(
+      new THREE.Vector3(1, 0, 0), // SCAD +X is ThreeJS +X (no change)
+      new THREE.Color(0xff0000),
+      new THREE.Color(0x000000),
+      "+X",
+      new THREE.Vector3(0, 5, 0) // Float slight above
+    )
+
+    // Create SCAD Y-Axis (green)
+    addAxis(
+      new THREE.Vector3(0, 0, -1), // SCAD +Y is ThreeJS -Z
+      new THREE.Color(0x00ff00),
+      new THREE.Color(0x000000),
+
+      "+Y",
+      new THREE.Vector3(0, 5, 0) // Float slight above
+    )
+
+    // Create SCAD Z-Axis (blue)
+    addAxis(
+      new THREE.Vector3(0, 1, 0), // SCAD +Z is ThreeJS +Y
+      new THREE.Color(0x0000ff),
+      new THREE.Color(0x000000),
+
+      "+Z",
+      new THREE.Vector3(5, 0, 0) // Float slightly to the right
+    )
+
+    // Create SCAD -X-Axis (yellow)
+    addAxis(
+      new THREE.Vector3(-1, 0, 0), // SCAD -X is ThreeJS -X
+      new THREE.Color(0xffff00),
+      new THREE.Color(0x000000),
+
+      "-X",
+      new THREE.Vector3(0, 5, 0) // Float slight above
+    )
+
+    // Create SCAD -Y-Axis (cyan)
+    addAxis(
+      new THREE.Vector3(0, 0, 1), // SCAD -Y is ThreeJS +Z
+      new THREE.Color(0x00ffff),
+      new THREE.Color(0x000000),
+
+      "-Y",
+      new THREE.Vector3(0, 5, 0) // Float slight above
+    )
+
+    // Create SCAD -Z-Axis (magenta)
+    addAxis(
+      new THREE.Vector3(0, -1, 0), // SCAD -Z is ThreeJS -Y
+      new THREE.Color(0xff00ff),
+      new THREE.Color(0x000000),
+
+      "-Z",
+      new THREE.Vector3(5, 0, 0) // Float slightly to the right
+    )
+
+
+    axesAdded.current = true;
+  }, []);
+
+  useEffect(() => {
+    if(!threeObjectsRef.current) return;
+    const { scene } = threeObjectsRef.current;
+    if(renderedAtLeastOnce){
+      traverseSyncChildrenFirst(scene,(node)=>{
+        if(node.name&&node.name.startsWith("__AXIS_")){
+          node.visible=true
+        }
+      })
+    }
+  },[
+    renderedAtLeastOnce,
+
+  ])
+
+  // Create the opposite axes
+  // From testing it appear it is useful to show all 6 directions for best visibility
+  // In the future, we may even add support for showing different grids on different planes
+
 
   // Three.js animation loop.
   useEffect(() => {
@@ -172,15 +311,7 @@ function App() {
     });
   }, [shownMessages]);
 
-  function traverseSyncChildrenFirst(
-    node: THREE.Object3D,
-    callback: (node: THREE.Object3D) => void
-  ) {
-    for (const child of node.children) {
-      traverseSyncChildrenFirst(child, callback);
-    }
-    callback(node);
-  }
+
 
   const goToDefaultView = () => {
     const threeObjects = threeObjectsRef.current;
@@ -189,7 +320,7 @@ function App() {
     const { scene, camera } = threeObjects;
     const bbox = new THREE.Box3();
     traverseSyncChildrenFirst(scene, (node: THREE.Object3D) => {
-      if (node instanceof THREE.Mesh) {
+      if (node instanceof THREE.Mesh && !node.userData.keep) {
         bbox.expandByObject(node);
       }
     });
@@ -215,22 +346,16 @@ function App() {
   };
 
   // Update the Three.js scene by adding rendered parts.
+  // We now clear and update only the partsGroup, leaving our axes intact.
   const updateThreeScene = () => {
     const threeObjects = threeObjectsRef.current;
     if (!threeObjects) return;
 
-    const { scene, loader } = threeObjects;
+    const { loader, partsGroup } = threeObjects;
 
-    traverseSyncChildrenFirst(scene, (node: THREE.Object3D) => {
-      if (node instanceof THREE.Mesh) {
-        scene.remove(node);
-      }
-    });
-
-    for (const child of scene.children) {
-      if (child instanceof THREE.Mesh) {
-        scene.remove(child);
-      }
+    // Clear out previous parts.
+    while (partsGroup.children.length > 0) {
+      partsGroup.remove(partsGroup.children[0]);
     }
 
     // Add new mesh for each completed part.
@@ -238,6 +363,7 @@ function App() {
       if (part.stl) {
         try {
           const geometry = loader.parse(part.stl.buffer);
+          geometry.rotateX(-Math.PI / 2);
           const material = new THREE.MeshPhongMaterial({
             color: getColorOrDefault(part.color),
           });
@@ -245,7 +371,7 @@ function App() {
           mesh.name = name;
           mesh.castShadow = true;
           mesh.receiveShadow = true;
-          scene.add(mesh);
+          partsGroup.add(mesh);
         } catch (error) {
           console.error(`Error parsing STL for part "${name}":`, error);
         }
@@ -259,27 +385,21 @@ function App() {
   const updateThreeScenePartsVisibility = useCallback(() => {
     const threeObjects = threeObjectsRef.current;
     if (!threeObjects) return;
-
     const { scene } = threeObjects;
 
-
-    for (const child of scene.children) {
-      if (child instanceof THREE.Mesh) {
+    // Toggle visibility only for objects not marked as keep (i.e. rendered parts).
+    scene.traverse((child) => {
+      if (!child.userData.keep && child instanceof THREE.Mesh) {
         const partName = child.name;
         const settings = partSettings[partName];
-        if (settings) {
-          child.visible = settings.visible;
-        } else {
-          child.visible = false;
-        }
+        child.visible = settings ? settings.visible : false;
       }
-    }
-  },[partSettings])
+    });
+  }, [partSettings]);
 
   useEffect(() => {
     updateThreeScenePartsVisibility();
   }, [partSettings, updateThreeScenePartsVisibility]);
-
 
   const handleEditorDidMount: OnMount = (editor) => {
     const savedCode = localStorage.getItem(LOCAL_STORAGE_KEY);
@@ -508,7 +628,7 @@ function App() {
               <I>No parts yet.</I>
             )}
           </Div>
-          <Div background="skyblue" position="relative" height="100%">
+          <Div background="#aaaaaa" position="relative" height="100%">
             <Div ref={viewerRef} width="100%" height="100%"></Div>
             <Div
               position="absolute"
