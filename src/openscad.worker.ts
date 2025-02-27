@@ -13,6 +13,7 @@ interface RenderRequest {
   command: "render";
   partName: string;
   part: OpenSCADPart;
+  backend?: Backend; // Optional backend parameter
 }
 
 interface LogMessage {
@@ -33,6 +34,15 @@ interface ErrorMessage {
   error: string;
 }
 
+// Manifold:  Ultra Fast
+// Works in most cases perfectly
+// Good for render
+
+// CGAL
+// Very slow, but much more guaranteed to be accurate
+// Good for export
+type Backend = "CGAL" | "Manifold"
+
 // A helper to send a log message back to the main thread.
 const sendLog = (partName: string, message: string) => {
   (self as DedicatedWorkerGlobalScope).postMessage({
@@ -45,7 +55,7 @@ const sendLog = (partName: string, message: string) => {
 self.onmessage = async (event: MessageEvent<RenderRequest>) => {
   const data = event.data;
   if (data.command !== "render") return;
-  const { partName, part } = data;
+  const { partName, part, backend = "Manifold" } = data; // Default to Manifold if not specified
 
   try {
     sendLog(partName, "Initializing OpenSCAD...");
@@ -57,12 +67,13 @@ self.onmessage = async (event: MessageEvent<RenderRequest>) => {
     instance.FS.writeFile("/input.scad", part.ownSourceCode);
     sendLog(partName, "Input file written.");
 
-    sendLog(partName, "Performing render...");
+    sendLog(partName, `Performing render with ${backend} backend...`);
     const args = [
       "/input.scad",
       "--viewall",
       "--autocenter",
       "--render",
+      `--backend=${backend}`, // Use the specified backend
       "--export-format=binstl",
     ];
     const filename = `part_${partName}.stl`;

@@ -7,6 +7,7 @@ import * as THREE from "three";
 import { OrbitControls } from "three/examples/jsm/controls/OrbitControls.js";
 import { STLLoader } from "three/examples/jsm/loaders/STLLoader.js";
 import Color from "color";
+import {MdDownload, MdDownloadDone} from "react-icons/md"
 
 import "@fontsource/fira-code/300.css";
 import "@fontsource/fira-code/400.css";
@@ -28,6 +29,15 @@ const MAX_MESSAGES = 200;
 const LOCAL_STORAGE_KEY = "openscad-code";
 
 type OpenSCADPartWithSTL = OpenSCADPart & { stl?: Uint8Array };
+
+function copySharedBufferToArrayBuffer(sharedBuffer: SharedArrayBuffer | ArrayBuffer): ArrayBuffer {
+  if (sharedBuffer instanceof ArrayBuffer) {
+    return sharedBuffer;
+  }
+  const arrayBuffer = new ArrayBuffer(sharedBuffer.byteLength);
+  new Uint8Array(arrayBuffer).set(new Uint8Array(sharedBuffer));
+  return arrayBuffer;
+}
 
 function rgbaByteToInt(r: number, g: number, b: number, a: number) {
   return (a << 24) | (r << 16) | (g << 8) | b;
@@ -362,7 +372,7 @@ function App() {
     Object.entries(completedModelRef.current).forEach(([name, part]) => {
       if (part.stl) {
         try {
-          const geometry = loader.parse(part.stl.buffer);
+          const geometry = loader.parse(copySharedBufferToArrayBuffer(part.stl.buffer));
           geometry.rotateX(-Math.PI / 2);
           const material = new THREE.MeshPhongMaterial({
             color: getColorOrDefault(part.color),
@@ -443,7 +453,7 @@ function App() {
   /**
    * Offloads rendering for a given part to a worker.
    */
-  const renderPartInWorker = (partName: string, part: OpenSCADPart) => {
+  const renderPartInWorker = (partName: string, part: OpenSCADPart, backend: "Manifold"|"CGAL") => {
     return new Promise<void>((resolve, reject) => {
       // Create a new worker using Vite’s built-in worker support.
       const worker = new Worker(
@@ -476,14 +486,14 @@ function App() {
       };
 
       // Post the render command to the worker.
-      worker.postMessage({ command: "render", partName, part });
+      worker.postMessage({ command: "render", partName, part, backend });
     });
   };
 
   /**
    * Initiates rendering of all detected parts by delegating to the worker.
    */
-  const renderModel = async () => {
+  const renderModel = async (backend:"Manifold"|"CGAL"="Manifold") => {
     if (isProcessing) {
       log("Already processing, please wait...");
       return;
@@ -509,7 +519,7 @@ function App() {
     try {
       // Process parts sequentially (you can also do this concurrently if desired).
       for (const [name, part] of Object.entries(detectedParts)) {
-        await renderPartInWorker(name, part);
+        await renderPartInWorker(name, part, backend);
       }
       for (const partName of Object.keys(completedModelRef.current)) {
         if (!(partName in partSettings)) {
@@ -585,10 +595,23 @@ function App() {
             disabled={isProcessing}
             flex={1}
             fontSize="150%"
-            onClick={renderModel}
+            onClick={()=>{
+              renderModel("Manifold");
+            }}
             cursor={isProcessing ? "progress" : "pointer"}
           >
-            Render
+            Preview Render
+          </Button>
+          <Button
+            disabled={isProcessing}
+            flex={1}
+            fontSize="150%"
+            onClick={()=>{
+              renderModel("CGAL");
+            }}
+            cursor={isProcessing ? "progress" : "pointer"}
+          >
+            Full Render
           </Button>
         </Div>
         {/* Three.js Model Viewer And Item Visibility Checkboxes */}
