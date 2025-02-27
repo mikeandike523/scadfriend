@@ -7,7 +7,6 @@ import * as THREE from "three";
 import { OrbitControls } from "three/examples/jsm/controls/OrbitControls.js";
 import { STLLoader } from "three/examples/jsm/loaders/STLLoader.js";
 import Color from "color";
-import {MdDownload, MdDownloadDone} from "react-icons/md"
 
 import "@fontsource/fira-code/300.css";
 import "@fontsource/fira-code/400.css";
@@ -412,14 +411,17 @@ function App() {
   }, [partSettings, updateThreeScenePartsVisibility]);
 
   const handleEditorDidMount: OnMount = (editor) => {
-    const savedCode = localStorage.getItem(LOCAL_STORAGE_KEY);
-    if (savedCode) {
-      editor.setValue(savedCode);
-      setEditorValue(savedCode);
-    } else {
-      editor.setValue(exampleCode);
-      setEditorValue(exampleCode);
-    }
+   //const savedCode = localStorage.getItem(LOCAL_STORAGE_KEY);
+    // if (savedCode) {
+    //   editor.setValue(savedCode);
+    //   setEditorValue(savedCode);
+    // } else {
+    //   editor.setValue(exampleCode);
+    //   setEditorValue(exampleCode);
+    // }
+    // For now, we will reload example on refresh since we want to test out the example as we go
+    editor.setValue(exampleCode);
+    setEditorValue(exampleCode);
     const model = editor.getModel();
     if (model) {
       const lastLineNumber = model.getLineCount();

@@ -30,8 +30,27 @@ module two_point_box(
 
 // Item 1: Sclera
 
-EYE_DIAMETER=12;
+EYE_DIAMETER=24;
+
+SCLERA_THICKNESS=1;
 
 module sclera(){
+    // Start with a half sphere
+    difference(){
+        sphere(r=EYE_DIAMETER/2);
+        two_point_box([
+            0, -EYE_DIAMETER/2, EYE_DIAMETER/2
+        ],[
+            EYE_DIAMETER/2, 
+            EYE_DIAMETER/2,
+            -EYE_DIAMETER/2
+        ]);
+        sphere(r=EYE_DIAMETER/2-SCLERA_THICKNESS);
+    }
+
 
 }
+
+// @export sclera
+color("white")
+sclera();
