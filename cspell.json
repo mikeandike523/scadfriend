@@ -1,0 +1,35 @@
+{
+  "version": "0.2",
+  "language": "en",
+  "dictionaryDefinitions": [
+    {
+      "name": "generalTerms",
+      "path": "./.vscode/dictionaries/general-terms.txt"
+    },
+    {
+      "name": "programmingTerms",
+      "path": "./.vscode/dictionaries/programming-terms.txt"
+    },
+    {
+      "name": "projectTerms",
+      "path": "./.vscode/dictionaries/project-terms.txt"
+    },
+    {
+      "name": "properNouns",
+      "path": "./.vscode/dictionaries/proper-nouns.txt"
+    },
+    {
+      "name": "people",
+      "path": "./.vscode/dictionaries/people.txt"
+    }
+  ],
+  "dictionaries": [
+    "generalTerms",
+    "programmingTerms",
+    "projectTerms",
+    "properNouns",
+    "people"
+  ],
+  "ignorePaths": ["cspell.json", "Pipfile"],
+  "useGitignore": true
+}

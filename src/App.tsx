@@ -1,12 +1,12 @@
 // App.tsx
 import { css, keyframes } from "@emotion/react";
 import Editor, { OnMount } from "@monaco-editor/react";
+import Color from "color";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { Button, Div, H1, I, Input, Label } from "style-props-html";
 import * as THREE from "three";
 import { OrbitControls } from "three/examples/jsm/controls/OrbitControls.js";
 import { STLLoader } from "three/examples/jsm/loaders/STLLoader.js";
-import Color from "color";
 
 import "@fontsource/fira-code/300.css";
 import "@fontsource/fira-code/400.css";
@@ -29,7 +29,9 @@ const LOCAL_STORAGE_KEY = "openscad-code";
 
 type OpenSCADPartWithSTL = OpenSCADPart & { stl?: Uint8Array };
 
-function copySharedBufferToArrayBuffer(sharedBuffer: SharedArrayBuffer | ArrayBuffer): ArrayBuffer {
+function copySharedBufferToArrayBuffer(
+  sharedBuffer: SharedArrayBuffer | ArrayBuffer
+): ArrayBuffer {
   if (sharedBuffer instanceof ArrayBuffer) {
     return sharedBuffer;
   }
@@ -178,7 +180,7 @@ function App() {
     if (!threeObjects || axesAdded.current) return;
     const { scene } = threeObjects;
 
-    const addAxis=(
+    const addAxis = (
       direction: THREE.Vector3,
       mainLineColor: THREE.Color,
       tickColor: THREE.Color,
@@ -187,7 +189,7 @@ function App() {
        * Offset from the end of the axis
        */
       labelOffset: THREE.Vector3
-    )=>{
+    ) => {
       createLabeledAxis({
         scene,
         direction,
@@ -202,9 +204,9 @@ function App() {
         labelFontSize: 4,
         labelOffset, // Float slight above
         name: "__AXIS_" + labelText,
-        visible: false
+        visible: false,
       });
-    }
+    };
 
     // Create SCAD X-Axis (red)
     addAxis(
@@ -213,7 +215,7 @@ function App() {
       new THREE.Color(0x000000),
       "+X",
       new THREE.Vector3(0, 5, 0) // Float slight above
-    )
+    );
 
     // Create SCAD Y-Axis (green)
     addAxis(
@@ -223,7 +225,7 @@ function App() {
 
       "+Y",
       new THREE.Vector3(0, 5, 0) // Float slight above
-    )
+    );
 
     // Create SCAD Z-Axis (blue)
     addAxis(
@@ -233,7 +235,7 @@ function App() {
 
       "+Z",
       new THREE.Vector3(5, 0, 0) // Float slightly to the right
-    )
+    );
 
     // Create SCAD -X-Axis (yellow)
     addAxis(
@@ -243,7 +245,7 @@ function App() {
 
       "-X",
       new THREE.Vector3(0, 5, 0) // Float slight above
-    )
+    );
 
     // Create SCAD -Y-Axis (cyan)
     addAxis(
@@ -253,7 +255,7 @@ function App() {
 
       "-Y",
       new THREE.Vector3(0, 5, 0) // Float slight above
-    )
+    );
 
     // Create SCAD -Z-Axis (magenta)
     addAxis(
@@ -263,31 +265,26 @@ function App() {
 
       "-Z",
       new THREE.Vector3(5, 0, 0) // Float slightly to the right
-    )
-
+    );
 
     axesAdded.current = true;
   }, []);
 
   useEffect(() => {
-    if(!threeObjectsRef.current) return;
+    if (!threeObjectsRef.current) return;
     const { scene } = threeObjectsRef.current;
-    if(renderedAtLeastOnce){
-      traverseSyncChildrenFirst(scene,(node)=>{
-        if(node.name&&node.name.startsWith("__AXIS_")){
-          node.visible=true
+    if (renderedAtLeastOnce) {
+      traverseSyncChildrenFirst(scene, (node) => {
+        if (node.name && node.name.startsWith("__AXIS_")) {
+          node.visible = true;
         }
-      })
+      });
     }
-  },[
-    renderedAtLeastOnce,
-
-  ])
+  }, [renderedAtLeastOnce]);
 
   // Create the opposite axes
   // From testing it appear it is useful to show all 6 directions for best visibility
   // In the future, we may even add support for showing different grids on different planes
-
 
   // Three.js animation loop.
   useEffect(() => {
@@ -319,8 +316,6 @@ function App() {
       behavior: "smooth",
     });
   }, [shownMessages]);
-
-
 
   const goToDefaultView = () => {
     const threeObjects = threeObjectsRef.current;
@@ -371,7 +366,9 @@ function App() {
     Object.entries(completedModelRef.current).forEach(([name, part]) => {
       if (part.stl) {
         try {
-          const geometry = loader.parse(copySharedBufferToArrayBuffer(part.stl.buffer));
+          const geometry = loader.parse(
+            copySharedBufferToArrayBuffer(part.stl.buffer)
+          );
           geometry.rotateX(-Math.PI / 2);
           const material = new THREE.MeshPhongMaterial({
             color: getColorOrDefault(part.color),
@@ -411,7 +408,7 @@ function App() {
   }, [partSettings, updateThreeScenePartsVisibility]);
 
   const handleEditorDidMount: OnMount = (editor) => {
-   //const savedCode = localStorage.getItem(LOCAL_STORAGE_KEY);
+    //const savedCode = localStorage.getItem(LOCAL_STORAGE_KEY);
     // if (savedCode) {
     //   editor.setValue(savedCode);
     //   setEditorValue(savedCode);
@@ -455,7 +452,11 @@ function App() {
   /**
    * Offloads rendering for a given part to a worker.
    */
-  const renderPartInWorker = (partName: string, part: OpenSCADPart, backend: "Manifold"|"CGAL") => {
+  const renderPartInWorker = (
+    partName: string,
+    part: OpenSCADPart,
+    backend: "Manifold" | "CGAL"
+  ) => {
     return new Promise<void>((resolve, reject) => {
       // Create a new worker using Vite’s built-in worker support.
       const worker = new Worker(
@@ -495,7 +496,7 @@ function App() {
   /**
    * Initiates rendering of all detected parts by delegating to the worker.
    */
-  const renderModel = async (backend:"Manifold"|"CGAL"="Manifold") => {
+  const renderModel = async (backend: "Manifold" | "CGAL" = "Manifold") => {
     if (isProcessing) {
       log("Already processing, please wait...");
       return;
@@ -597,7 +598,7 @@ function App() {
             disabled={isProcessing}
             flex={1}
             fontSize="150%"
-            onClick={()=>{
+            onClick={() => {
               renderModel("Manifold");
             }}
             cursor={isProcessing ? "progress" : "pointer"}
@@ -608,7 +609,7 @@ function App() {
             disabled={isProcessing}
             flex={1}
             fontSize="150%"
-            onClick={()=>{
+            onClick={() => {
               renderModel("CGAL");
             }}
             cursor={isProcessing ? "progress" : "pointer"}

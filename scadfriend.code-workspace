@@ -4,5 +4,10 @@
 			"path": "."
 		}
 	],
-	"settings": {}
+	"settings": {
+		"git.decorations.enabled": false,
+		"scm.diffDecorations": "none",
+		"editor.hideCursorInOverviewRuler": true,
+		"editor.overviewRulerBorder": false
+	}
 }
