@@ -1,8 +1,8 @@
-import { forwardRef } from "react";
-import { Button, Div, DivProps, H1 } from "style-props-html";
-import { EditorTabAgent } from "../hooks/useEditorTabAgent";
-import { Editor } from "@monaco-editor/react";
 import { css } from "@emotion/react";
+import { Editor } from "@monaco-editor/react";
+import { forwardRef } from "react";
+import { Aside, Br, Button, Div, DivProps, H1, I } from "style-props-html";
+import { EditorTabAgent } from "../hooks/useEditorTabAgent";
 import { useRegisterOpenSCADLanguage } from "../openscad-lang";
 
 import "@fontsource/fira-code/300.css";
@@ -30,17 +30,43 @@ export default forwardRef<HTMLDivElement, EditorTabProps>(function EditorTab(
       gridTemplateRows="auto 1fr"
       gridTemplateColumns="1fr"
       height="100%"
+      rowGap="0"
+      columnGap="0"
       {...rest}
     >
-      <H1 width="100%" textAlign="center">
-        {agent.filename ?? "New File"}
-      </H1>
+      <Div
+        padding="0"
+        display="flex"
+        flexDirection="row"
+        alignItems="center"
+        justifyContent="flex-start"
+      >
+        <H1
+          textAlign="left"
+          fontSize="16px"
+          background="#1E1E1E"
+          color="white"
+          padding="4px"
+          fontWeight="normal"
+        >
+          {agent.fileIsLoaded
+            ? agent.filename
+            : agent.isNewFile
+            ? "New File"
+            : "No File Selected"}
+        </H1>
+      </Div>
+
       <Div width="100%" height="100%" position="relative">
         <Editor
+          onMount={(editor) => {
+            agent.storeEditor(editor);
+          }}
           onChange={(newValue) => agent.setCode(newValue ?? "")}
           css={css`
             width: 100%;
             height: 100%;
+            border: none;
           `}
           options={{
             wordWrap: "on",
@@ -52,7 +78,7 @@ export default forwardRef<HTMLDivElement, EditorTabProps>(function EditorTab(
             minimap: { enabled: false },
           }}
           defaultLanguage="openscad"
-          defaultValue={"// Loading..."}
+          defaultValue={""}
           theme="openscad-theme"
         />
         <Div
@@ -67,13 +93,27 @@ export default forwardRef<HTMLDivElement, EditorTabProps>(function EditorTab(
           display="flex"
           alignItems="center"
           justifyContent="center"
-          flexDirection="column"
-          background="white"
-          padding="8px"
+          // background="rgba(255, 255, 255, 0.5)"
         >
-            <H1>No File Selected</H1>
+          <Div
+            display="flex"
+            flexDirection="column"
+            alignItems="stretch"
+            padding="8px"
+            gap="8px"
+            background="white"
+          >
+            <H1 textAlign="center">No File Selected</H1>
             <Button>Open Existing File</Button>
-            <Button>Create New File</Button>
+            <Button onClick={agent.createNewFile}>Create New File</Button>
+            <Aside fontSize="12px" textAlign="center" fontStyle="italic">
+              Please respond "yes" to any dialogs that ask for permission after
+              opening or before saving files.
+              <Br />
+              If you do not respond "yes", you will need to try opening or
+              saving the file again.
+            </Aside>
+          </Div>
         </Div>
       </Div>
     </Div>

@@ -7,6 +7,10 @@ import {
   useState,
 } from "react";
 
+import { OnMount } from "@monaco-editor/react";
+
+export type MonacoEditorInterface = Parameters<OnMount>[0]
+
 /**
  * Encapsulates the necessary resources and included functionality of an editor tab.
  * The editor tab JSX component takes this as a props and uses it as an intermediary to interact with the
@@ -35,6 +39,8 @@ export interface EditorTabAgent {
   setDirty: Dispatch<SetStateAction<boolean>>;
   fileIsLoaded: boolean;
   setFileIsLoaded: Dispatch<SetStateAction<boolean>>;
+  createNewFile: () => void;
+  storeEditor: (editor: MonacoEditorInterface) => void;
 }
 
 export default function useEditorTabAgent(): EditorTabAgent {
@@ -45,12 +51,30 @@ export default function useEditorTabAgent(): EditorTabAgent {
   const [dirty, setDirty] = useState(false);
   const [lastLoadedCode, setLastLoadedCode] = useState<string | null>(null);
   const [fileIsLoaded, setFileIsLoaded] = useState(false);
+  const editorRef = useRef<MonacoEditorInterface | null>(null);
 
   useEffect(() => {
     if (fileIsLoaded && code !== lastLoadedCode) {
       setDirty(true);
     }
   }, [code, lastLoadedCode, fileIsLoaded]);
+
+  const createNewFile = () => {
+    // TODO: If dirty warn before purging old content and creating new
+    // We can leave this out for now
+    setIsNewFile(true);
+    setCode("");
+    setFilename(null)
+    setLastLoadedCode(null);
+    setDirty(false);
+    setFileIsLoaded(false);
+    editorRef.current?.setValue("")
+    fileRef.current = null;
+  }
+
+  const storeEditor = (editor: MonacoEditorInterface) => {
+    editorRef.current = editor;
+  }
 
   return {
     lastLoadedCode,
@@ -66,5 +90,7 @@ export default function useEditorTabAgent(): EditorTabAgent {
     setDirty,
     fileIsLoaded,
     setFileIsLoaded,
+    createNewFile,
+    storeEditor
   };
 }

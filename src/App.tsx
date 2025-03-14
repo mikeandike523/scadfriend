@@ -1,6 +1,6 @@
 // App.tsx
 import { css, keyframes } from "@emotion/react";
-import Editor, { OnMount } from "@monaco-editor/react";
+import { OnMount } from "@monaco-editor/react";
 import Color from "color";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { Button, Div, H1, I, Input, Label } from "style-props-html";
@@ -18,6 +18,8 @@ import "@fontsource/fira-code/index.css";
 import { FaHome } from "react-icons/fa";
 import "./App.css";
 import exampleCode from "./assets/example.scad?raw";
+import EditorTab from "./components/EditorTab";
+import useEditorTabAgent from "./hooks/useEditorTabAgent";
 import { useRegisterOpenSCADLanguage } from "./openscad-lang";
 import { identifyParts, OpenSCADPart } from "./openscad-parsing";
 
@@ -95,6 +97,10 @@ function App() {
   const [partSettings, setPartSettings] = useState<{
     [name: string]: PartSettings;
   }>({});
+
+  // For now, just one tab
+
+  const editorTabAgent = useEditorTabAgent();
 
   // Create a ref to store the OrbitControls instance.
   const orbitControlsRef = useRef<OrbitControls | null>(null);
@@ -557,33 +563,7 @@ function App() {
       height="100%"
     >
       <Div height="100%" flex={1}>
-        <Editor
-          options={{
-            wordWrap: "on",
-            fontSize: 18,
-            fontFamily: "'Fira Code', monospace",
-            fontLigatures: true,
-            fontWeight: "400",
-            renderWhitespace: "all",
-            minimap: { enabled: false },
-          }}
-          defaultLanguage="openscad"
-          defaultValue={"// Loading..."}
-          theme="openscad-theme"
-          onMount={handleEditorDidMount}
-          onChange={(value) => {
-            if (typeof value === "string") {
-              if (value === "") {
-                localStorage.removeItem(LOCAL_STORAGE_KEY);
-              } else {
-                localStorage.setItem(LOCAL_STORAGE_KEY, value);
-              }
-            } else {
-              localStorage.removeItem(LOCAL_STORAGE_KEY);
-            }
-            setEditorValue(value ?? "");
-          }}
-        />
+        <EditorTab agent={editorTabAgent} />
       </Div>
       <Div
         height="100%"
