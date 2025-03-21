@@ -1,11 +1,11 @@
 {
   "compilerOptions": {
-"composite": true,
+    "composite": true,
 
     "tsBuildInfoFile": "./node_modules/.tmp/tsconfig.app.tsbuildinfo",
-    "target": "ES2020",
+    "target": "ESNext",
     "useDefineForClassFields": true,
-    "lib": ["ES2020", "DOM", "DOM.Iterable"],
+    "lib": ["ESNext", "DOM", "DOM.Iterable", "DOM.AsyncIterable"],
     "module": "ESNext",
     "skipLibCheck": true,
 
@@ -18,7 +18,6 @@
     "jsx": "react-jsx",
     "emitDeclarationOnly": true,
     "outDir": "emit",
-
 
     /* Linting */
     "strict": true,

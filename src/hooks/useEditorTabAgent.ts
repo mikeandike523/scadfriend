@@ -2,14 +2,21 @@ import {
   Dispatch,
   RefObject,
   SetStateAction,
+  useCallback,
   useEffect,
   useRef,
   useState,
 } from "react";
 
 import { OnMount } from "@monaco-editor/react";
+import {
+  openExistingFile as fsaOpenExistingFile,
+  reopenLastFile,
+  saveFile,
+  storeFileHandle,
+} from "../utils/fsaUtils";
 
-export type MonacoEditorInterface = Parameters<OnMount>[0]
+export type MonacoEditorInterface = Parameters<OnMount>[0];
 
 /**
  * Encapsulates the necessary resources and included functionality of an editor tab.
@@ -41,40 +48,117 @@ export interface EditorTabAgent {
   setFileIsLoaded: Dispatch<SetStateAction<boolean>>;
   createNewFile: () => void;
   storeEditor: (editor: MonacoEditorInterface) => void;
+  computeDirty: (newCode: string) => void;
+  openExistingFile: () => Promise<void>;
+  saveCurrentFile: () => Promise<void>;
 }
 
-export default function useEditorTabAgent(): EditorTabAgent {
+export default function useEditorTabAgent({
+  code,
+  setCode,
+}: {
+  code: string;
+  setCode: Dispatch<SetStateAction<string>>;
+}): EditorTabAgent {
   const fileRef = useRef<FileSystemFileHandle | null>(null);
   const [isNewFile, setIsNewFile] = useState(false);
-  const [code, setCode] = useState("");
+  // const [code, setCode] = useState("");
   const [filename, setFilename] = useState<string | null>(null);
   const [dirty, setDirty] = useState(false);
   const [lastLoadedCode, setLastLoadedCode] = useState<string | null>(null);
   const [fileIsLoaded, setFileIsLoaded] = useState(false);
   const editorRef = useRef<MonacoEditorInterface | null>(null);
+  const [editorLoaded, setEditorLoaded] = useState(false);
 
   useEffect(() => {
-    if (fileIsLoaded && code !== lastLoadedCode) {
-      setDirty(true);
+    if (!editorLoaded) {
+      const timer = setInterval(() => {
+        if (editorRef.current) {
+          setEditorLoaded(true);
+          clearInterval(timer);
+        }
+      }, 100);
     }
-  }, [code, lastLoadedCode, fileIsLoaded]);
+  }, [editorLoaded]);
+
+  function computeDirty(newValue: string) {
+    if (fileIsLoaded) {
+      setDirty(newValue !== lastLoadedCode);
+    }
+    if (isNewFile) {
+      setDirty(newValue !== "");
+    }
+  }
 
   const createNewFile = () => {
     // TODO: If dirty warn before purging old content and creating new
     // We can leave this out for now
     setIsNewFile(true);
     setCode("");
-    setFilename(null)
+    setFilename("Untitled.scad");
     setLastLoadedCode(null);
     setDirty(false);
     setFileIsLoaded(false);
-    editorRef.current?.setValue("")
+    editorRef.current?.setValue("");
     fileRef.current = null;
-  }
+  };
 
   const storeEditor = (editor: MonacoEditorInterface) => {
     editorRef.current = editor;
-  }
+  };
+
+  const checkForExistingFile = useCallback(
+    async function checkForExistingFile() {
+      if (!editorLoaded) return;
+      console.log("Trying to reopen last file...");
+      const result = await reopenLastFile();
+      if (result) {
+        const { fileHandle, content } = result;
+        fileRef.current = fileHandle;
+        setCode(content);
+        setFilename(fileHandle.name);
+        setLastLoadedCode(content);
+        setDirty(false);
+        setFileIsLoaded(true);
+        setIsNewFile(false);
+        editorRef.current?.setValue(content);
+      }
+    },
+    [setCode, editorLoaded]
+  );
+  useEffect(() => {
+    console.log("Checking for existing file...");
+    checkForExistingFile();
+  }, [checkForExistingFile]);
+
+  const openExistingFile = async () => {
+    const result = await fsaOpenExistingFile();
+    if (result) {
+      const { fileHandle, content } = result;
+      fileRef.current = fileHandle;
+      setCode(content);
+      setFilename(fileHandle.name);
+      setLastLoadedCode(content);
+      setDirty(false);
+      setFileIsLoaded(true);
+      setIsNewFile(false);
+      editorRef.current?.setValue(content);
+      await storeFileHandle(fileHandle);
+    }
+  };
+
+  const saveCurrentFile = async () => {
+    if (fileRef.current) {
+      const didSave = await saveFile(fileRef.current, code);
+
+      if (didSave) {
+        setLastLoadedCode(code);
+        setDirty(false);
+        setFileIsLoaded(true);
+        setIsNewFile(false);
+      }
+    }
+  };
 
   return {
     lastLoadedCode,
@@ -91,6 +175,9 @@ export default function useEditorTabAgent(): EditorTabAgent {
     fileIsLoaded,
     setFileIsLoaded,
     createNewFile,
-    storeEditor
+    storeEditor,
+    computeDirty,
+    openExistingFile,
+    saveCurrentFile,
   };
 }

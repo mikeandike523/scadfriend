@@ -1,9 +1,8 @@
 // App.tsx
 import { css, keyframes } from "@emotion/react";
-import { OnMount } from "@monaco-editor/react";
 import Color from "color";
 import { useCallback, useEffect, useRef, useState } from "react";
-import { Button, Div, H1, I, Input, Label } from "style-props-html";
+import { Button, Div, H1, I, Input, Label, P } from "style-props-html";
 import * as THREE from "three";
 import { OrbitControls } from "three/examples/jsm/controls/OrbitControls.js";
 import { STLLoader } from "three/examples/jsm/loaders/STLLoader.js";
@@ -17,7 +16,6 @@ import "@fontsource/fira-code/index.css";
 
 import { FaHome } from "react-icons/fa";
 import "./App.css";
-import exampleCode from "./assets/example.scad?raw";
 import EditorTab from "./components/EditorTab";
 import useEditorTabAgent from "./hooks/useEditorTabAgent";
 import { useRegisterOpenSCADLanguage } from "./openscad-lang";
@@ -25,9 +23,9 @@ import { identifyParts, OpenSCADPart } from "./openscad-parsing";
 
 // Import our axis helper.
 import { createLabeledAxis } from "./AxisVisualizer";
+import useFSAUnsupported from "./hooks/useFSAUnsupported";
 
 const MAX_MESSAGES = 200;
-const LOCAL_STORAGE_KEY = "openscad-code";
 
 type OpenSCADPartWithSTL = OpenSCADPart & { stl?: Uint8Array };
 
@@ -85,11 +83,14 @@ function traverseSyncChildrenFirst(
 
 function App() {
   useRegisterOpenSCADLanguage();
+
+  const fsaUnsupported = useFSAUnsupported();
+
   const consoleDivRef = useRef<HTMLDivElement>(null);
   // This ref points to the viewer pane (our Three.js container)
   const viewerRef = useRef<HTMLDivElement>(null);
   const [messages, setMessages] = useState<string[]>([]);
-  const [editorValue, setEditorValue] = useState("");
+  const [code, setCode] = useState("");
   const [isProcessing, setIsProcessing] = useState(false);
   const [renderedAtLeastOnce, setRenderedAtLeastOnce] = useState(false);
   // For later export, we keep the completed parts in a ref.
@@ -100,7 +101,10 @@ function App() {
 
   // For now, just one tab
 
-  const editorTabAgent = useEditorTabAgent();
+  const editorTabAgent = useEditorTabAgent({
+    code,
+    setCode,
+  });
 
   // Create a ref to store the OrbitControls instance.
   const orbitControlsRef = useRef<OrbitControls | null>(null);
@@ -413,30 +417,6 @@ function App() {
     updateThreeScenePartsVisibility();
   }, [partSettings, updateThreeScenePartsVisibility]);
 
-  const handleEditorDidMount: OnMount = (editor) => {
-    //const savedCode = localStorage.getItem(LOCAL_STORAGE_KEY);
-    // if (savedCode) {
-    //   editor.setValue(savedCode);
-    //   setEditorValue(savedCode);
-    // } else {
-    //   editor.setValue(exampleCode);
-    //   setEditorValue(exampleCode);
-    // }
-    // For now, we will reload example on refresh since we want to test out the example as we go
-    editor.setValue(exampleCode);
-    setEditorValue(exampleCode);
-    const model = editor.getModel();
-    if (model) {
-      const lastLineNumber = model.getLineCount();
-      const lastLineLength = model.getLineLength(lastLineNumber);
-      editor.setPosition({
-        lineNumber: lastLineNumber,
-        column: lastLineLength + 1,
-      });
-      editor.focus();
-    }
-  };
-
   const log = (message: string) => {
     setMessages((prevMessages) => {
       const newMessages = [...prevMessages, message];
@@ -508,7 +488,7 @@ function App() {
       return;
     }
 
-    const detectedParts = identifyParts(editorValue);
+    const detectedParts = identifyParts(code);
 
     if (!Object.keys(detectedParts).length) {
       alert(
@@ -721,6 +701,32 @@ function App() {
           fontFamily="'Fira Code', monospace"
         >
           {messages.join("\n") + "\n"}
+        </Div>
+      </Div>
+      <Div
+        position="fixed"
+        width="100vw"
+        height="100vh"
+        zIndex={9999}
+        background="black"
+        display={fsaUnsupported ? "flex" : "none"}
+        alignItems="center"
+        justifyContent="center"
+      >
+        <Div
+          background="white"
+          padding="8px"
+          display="flex"
+          flexDirection="column"
+          alignItems="stretch"
+        >
+          <H1 textAlign="center" color="red">
+            Your browser is too old!
+          </H1>
+          <P textAlign="center">
+            The File System Access API (2016) is not supported in your browser.
+          </P>
+          <P textAlign="center">Please switch to a browser from after 2016.</P>
         </Div>
       </Div>
     </Div>

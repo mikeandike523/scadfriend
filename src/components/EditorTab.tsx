@@ -1,9 +1,10 @@
 import { css } from "@emotion/react";
 import { Editor } from "@monaco-editor/react";
 import { forwardRef } from "react";
-import { Aside, Br, Button, Div, DivProps, H1, I } from "style-props-html";
+import { Aside, Br, Button, Div, DivProps, H1, Span } from "style-props-html";
 import { EditorTabAgent } from "../hooks/useEditorTabAgent";
 import { useRegisterOpenSCADLanguage } from "../openscad-lang";
+import { FaSave } from "react-icons/fa";
 
 import "@fontsource/fira-code/300.css";
 import "@fontsource/fira-code/400.css";
@@ -35,26 +36,47 @@ export default forwardRef<HTMLDivElement, EditorTabProps>(function EditorTab(
       {...rest}
     >
       <Div
-        padding="0"
         display="flex"
         flexDirection="row"
         alignItems="center"
         justifyContent="flex-start"
+        padding="4px"
+        gap="4px"
       >
-        <H1
-          textAlign="left"
-          fontSize="16px"
-          background="#1E1E1E"
-          color="white"
-          padding="4px"
-          fontWeight="normal"
-        >
+        <H1 width="auto" fontSize="16px" color="black" fontWeight="normal">
           {agent.fileIsLoaded
             ? agent.filename
             : agent.isNewFile
-            ? "New File"
+            ? "Untitled.scad"
             : "No File Selected"}
         </H1>
+        <Span
+          transformOrigin="center"
+          transform="scale(1.5)"
+          display={agent.dirty ? "block" : "none"}
+          color="grey"
+        >
+          *
+        </Span>
+        {agent.dirty && (
+          <Button
+            marginLeft="auto"
+            borderRadius="50%"
+            border="2px solid blue"
+            width="auto"
+            height="auto"
+            display="flex"
+            aspectRatio={1.0}
+            padding="4px"
+            color="blue"
+            background="none"
+            alignItems="center"
+            justifyContent="center"
+            onClick={agent.saveCurrentFile}
+          >
+            <FaSave />
+          </Button>
+        )}
       </Div>
 
       <Div width="100%" height="100%" position="relative">
@@ -62,7 +84,10 @@ export default forwardRef<HTMLDivElement, EditorTabProps>(function EditorTab(
           onMount={(editor) => {
             agent.storeEditor(editor);
           }}
-          onChange={(newValue) => agent.setCode(newValue ?? "")}
+          onChange={(newValue) => {
+            agent.setCode(newValue ?? "");
+            agent.computeDirty(newValue ?? "");
+          }}
           css={css`
             width: 100%;
             height: 100%;
@@ -93,7 +118,7 @@ export default forwardRef<HTMLDivElement, EditorTabProps>(function EditorTab(
           display="flex"
           alignItems="center"
           justifyContent="center"
-          // background="rgba(255, 255, 255, 0.5)"
+          background="rgba(255,255,255,0.5)"
         >
           <Div
             display="flex"
@@ -104,7 +129,7 @@ export default forwardRef<HTMLDivElement, EditorTabProps>(function EditorTab(
             background="white"
           >
             <H1 textAlign="center">No File Selected</H1>
-            <Button>Open Existing File</Button>
+            <Button onClick={agent.openExistingFile}>Open Existing File</Button>
             <Button onClick={agent.createNewFile}>Create New File</Button>
             <Aside fontSize="12px" textAlign="center" fontStyle="italic">
               Please respond "yes" to any dialogs that ask for permission after
