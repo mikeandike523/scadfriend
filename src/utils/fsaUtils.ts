@@ -72,6 +72,35 @@ export async function getStoredFileHandle(): Promise<FileSystemFileHandle | null
   }
 }
 
+export async function deleteStoredFileHandle(): Promise<void> {
+  try {
+    const db = await openDB();
+    const tx = db.transaction("handles", "readwrite");
+    const store = tx.objectStore("handles");
+    const request = store.delete("lastFile");
+    return new Promise((resolve, reject) => {
+      request.onsuccess = () => {
+        tx.oncomplete = () => {
+          console.log("File handle deleted successfully");
+          db.close();
+          resolve();
+        };
+      };
+      request.onerror = () => {
+        console.error("Failed to delete file handle", request.error);
+        db.close();
+        reject(request.error);
+      };
+      tx.onerror = () => {
+        db.close();
+        reject(new Error("Transaction failed"));
+      };
+    });
+  } catch (error) {
+    console.error("Error deleting stored file handle:", error);
+  }
+}
+
 export async function reopenLastFile(): Promise<{
   fileHandle: FileSystemFileHandle;
   content: string;

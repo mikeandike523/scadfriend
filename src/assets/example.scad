@@ -2,10 +2,7 @@
 
 // Creates a box occupying the space between two given points
 // Point coordinates are sorted so the contained region will always be a positive volume
-module two_point_box(
-    A, // The first point [x, y, z]
-    B, // The second point [x, y, z]
-){
+module two_point_box(A, B){
     // Sort coordinates to ensure positive volume
     x_min = min(A[0], B[0]);
     y_min = min(A[1], B[1]);
@@ -25,84 +22,93 @@ module two_point_box(
         cube([width, depth, height]);
 }
 
-
 // The Human (Right) Eye 
 
 // Item 1: Sclera
 
-EYE_DIAMETER=24;
+EYE_DIAMETER = 24;
+SCLERA_THICKNESS = 1;
+SCLERA_ELONGATED_PORTION_START=10;
+SCLERA_ELONGATED_PORTION_LENGTH=8;
+SCLERA_OPENING_OUTER_DIAMETER=30;
 
-SCLERA_THICKNESS=1;
+// Item 2: Choroid
 
-// Sclera is composed of a sphere and elongate portion which is akin to a truncated cone
-SCLERA_ELONGATED_FRONT_PORTION_FRACTION=0.25;
-
-SCLERA_CONE_OPENING_DIAMETER=15;
-
-sclera_cutting_box_x_offset = SCLERA_ELONGATED_FRONT_PORTION_FRACTION*EYE_DIAMETER;
-
-CONE_TRUNCATION_LENGTH_FRACTION= 0.75;
-
-cone_truncation_length = SCLERA_ELONGATED_FRONT_PORTION_FRACTION*EYE_DIAMETER*CONE_TRUNCATION_LENGTH_FRACTION;
-
-cone_slope = (EYE_DIAMETER/2-SCLERA_CONE_OPENING_DIAMETER/2)/cone_truncation_length;
-
-cone_start_radius_computation_angle = acos(sclera_cutting_box_x_offset/(EYE_DIAMETER/2));
-
-sclera_inner_radius = EYE_DIAMETER/2-SCLERA_THICKNESS;
-
-cone_start_radius = EYE_DIAMETER/2*sin(cone_start_radius_computation_angle);
-
-cone_start_inner_radius_computation_angle=acos(sclera_cutting_box_x_offset/sclera_inner_radius);
-
-cone_start_inner_radius = sclera_inner_radius * sin(cone_start_inner_radius_computation_angle);
-
-cone_thickness = cone_start_radius - cone_start_inner_radius;
+CHOROID_THICKNESS=0.250;
+CHOROID_ELONGATED_PORTION_START=SCLERA_ELONGATED_PORTION_START;
+CHOROID_ELONGATED_PORTION_LENGTH=7;
+CHOROID_OPENING_OUTER_DIAMETER=27;
 
 
-
-module sclera(){
-
+// Module to create an elongated ball (spherical portion with an elongated truncated cone extension)
+module elongated_ball(
+    inner_radius,        // inner radius of the spherical shell
+    outer_radius,        // outer radius of the spherical shell
+    elongation_start,    // x-offset where the elongation (cone) starts
+    elongation_length,   // length of the elongated (cone) portion
+    opening_outer_radius,// outer radius at the tip of the cone (opening)
+    facets=64
+){
+    // Calculate derived parameters for the truncated cone:
+    // Compute the effective radius at the sphere boundary where the elongation starts.
+    cone_start_radius = outer_radius * sqrt(1 - (elongation_start/outer_radius) * (elongation_start/outer_radius));
+    cone_start_inner_radius = inner_radius * sqrt(1 - (elongation_start/inner_radius) * (elongation_start/inner_radius));
+    thickness = cone_start_radius - cone_start_inner_radius;
+    
     difference(){
         union(){
+            // Create the spherical shell and remove the part that will be elongated
             difference(){
-                sphere(r=EYE_DIAMETER/2,$fn=64);
-
-                sphere(r=EYE_DIAMETER/2-SCLERA_THICKNESS,$fn=64);
-
-
-                translate([sclera_cutting_box_x_offset, 0, 0])
-                rotate([0, 90, 0]) 
-                cylinder(h = cone_truncation_length, r = EYE_DIAMETER/2 , $fn=64);
+                sphere(r = outer_radius, $fn = facets);
+                sphere(r = inner_radius, $fn = facets);
+                translate([elongation_start, 0, 0])
+                    rotate([0, 90, 0])
+                    cylinder(h = elongation_length, r = outer_radius, $fn = facets);
             }
-
-            // Create the truncated cone shell using rotate_extrude
-            translate([sclera_cutting_box_x_offset, 0, 0])
-            rotate([0, 90, 0]) 
-            rotate_extrude(angle=360,$fn=64)
-            polygon(points=[
-                [SCLERA_CONE_OPENING_DIAMETER/2, cone_truncation_length],
-                [cone_start_radius,0],
-                [cone_start_radius-cone_thickness,0],
-                [SCLERA_CONE_OPENING_DIAMETER/2-cone_thickness, cone_truncation_length]
-            ]);
-
+            // Create the shell for the truncated cone using rotate_extrude
+            translate([elongation_start, 0, 0])
+                rotate([0, 90, 0])
+                rotate_extrude(angle = 360, $fn = facets)
+                    polygon(points = [
+                        [opening_outer_radius, elongation_length],
+                        [cone_start_radius, 0],
+                        [cone_start_inner_radius, 0],
+                        [opening_outer_radius - thickness, elongation_length]
+                    ]);
         }
-
-
-    two_point_box([
-        sclera_cutting_box_x_offset+cone_truncation_length, -EYE_DIAMETER/2, EYE_DIAMETER/2
-    ],[
-        sclera_cutting_box_x_offset+cone_truncation_length+50, 
-        EYE_DIAMETER/2,
-        -EYE_DIAMETER/2
-    ]);
-
+        // Subtract a cutting box to remove extraneous geometry
+        two_point_box(
+            [elongation_start + elongation_length, -outer_radius, outer_radius],
+            [elongation_start + elongation_length + 50, outer_radius, -outer_radius]
+        );
     }
+}
 
+// Now we can define sclera() using the elongated_ball module
+module sclera(){
+    elongated_ball(
+        inner_radius=EYE_DIAMETER-SCLERA_THICKNESS,
+        outer_radius=EYE_DIAMETER,
+        elongation_start=SCLERA_ELONGATED_PORTION_START,
+        elongation_length=SCLERA_ELONGATED_PORTION_LENGTH,
+        opening_outer_radius=SCLERA_OPENING_OUTER_DIAMETER/2
+    );
+}
 
+module choroid(){
+    elongated_ball(
+        inner_radius=EYE_DIAMETER-SCLERA_THICKNESS-CHOROID_THICKNESS,
+        outer_radius=EYE_DIAMETER-SCLERA_THICKNESS,
+        elongation_start=CHOROID_ELONGATED_PORTION_START,
+        elongation_length=CHOROID_ELONGATED_PORTION_LENGTH,
+        opening_outer_radius=CHOROID_OPENING_OUTER_DIAMETER/2
+    );
 }
 
 // @export sclera
 color("white")
 sclera();
+
+// @export choroid
+color("red")
+choroid();

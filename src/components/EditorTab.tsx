@@ -5,6 +5,7 @@ import { Aside, Br, Button, Div, DivProps, H1, Span } from "style-props-html";
 import { EditorTabAgent } from "../hooks/useEditorTabAgent";
 import { useRegisterOpenSCADLanguage } from "../openscad-lang";
 import { FaSave } from "react-icons/fa";
+import exampleSCAD from "../assets/example.scad?raw";
 
 import "@fontsource/fira-code/300.css";
 import "@fontsource/fira-code/400.css";
@@ -43,11 +44,20 @@ export default forwardRef<HTMLDivElement, EditorTabProps>(function EditorTab(
         padding="4px"
         gap="4px"
       >
+        <H1
+          display={!agent.fileIsLoaded && !agent.isNewFile ? "none" : "block"}
+          onClick={agent.closeFile}
+          color="red"
+          fontSize="16px"
+          fontWeight="normal"
+          userSelect="none"
+          cursor="pointer"
+        >
+          &times;
+        </H1>
         <H1 width="auto" fontSize="16px" color="black" fontWeight="normal">
-          {agent.fileIsLoaded
-            ? agent.filename
-            : agent.isNewFile
-            ? "Untitled.scad"
+          {agent.fileIsLoaded || agent.isNewFile
+            ? agent.filename ?? "Untitled.scad"
             : "No File Selected"}
         </H1>
         <Span
@@ -130,7 +140,17 @@ export default forwardRef<HTMLDivElement, EditorTabProps>(function EditorTab(
           >
             <H1 textAlign="center">No File Selected</H1>
             <Button onClick={agent.openExistingFile}>Open Existing File</Button>
-            <Button onClick={agent.createNewFile}>Create New File</Button>
+            <Button onClick={() => agent.createNewFile()}>
+              Create New File
+            </Button>
+            <Button
+              onClick={() => {
+                agent.createNewFile("Example.scad", exampleSCAD);
+              }}
+            >
+              Open Example Code
+            </Button>
+
             <Aside fontSize="12px" textAlign="center" fontStyle="italic">
               Please respond "yes" to any dialogs that ask for permission after
               opening or before saving files.

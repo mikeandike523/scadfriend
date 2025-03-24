@@ -14,6 +14,7 @@ import {
   reopenLastFile,
   saveFile,
   storeFileHandle,
+  deleteStoredFileHandle,
 } from "../utils/fsaUtils";
 
 export type MonacoEditorInterface = Parameters<OnMount>[0];
@@ -46,11 +47,12 @@ export interface EditorTabAgent {
   setDirty: Dispatch<SetStateAction<boolean>>;
   fileIsLoaded: boolean;
   setFileIsLoaded: Dispatch<SetStateAction<boolean>>;
-  createNewFile: () => void;
+  createNewFile: (name?: string, content?: string) => void;
   storeEditor: (editor: MonacoEditorInterface) => void;
   computeDirty: (newCode: string) => void;
   openExistingFile: () => Promise<void>;
   saveCurrentFile: () => Promise<void>;
+  closeFile: () => Promise<void>;
 }
 
 export default function useEditorTabAgent({
@@ -90,16 +92,16 @@ export default function useEditorTabAgent({
     }
   }
 
-  const createNewFile = () => {
+  const createNewFile = (name?: string, content?: string) => {
     // TODO: If dirty warn before purging old content and creating new
     // We can leave this out for now
     setIsNewFile(true);
     setCode("");
-    setFilename("Untitled.scad");
+    setFilename(name ?? "Untitled.scad");
     setLastLoadedCode(null);
-    setDirty(false);
+    setDirty(typeof content === "string" && content.trim() !== "");
     setFileIsLoaded(false);
-    editorRef.current?.setValue("");
+    editorRef.current?.setValue(content ?? "");
     fileRef.current = null;
   };
 
@@ -160,6 +162,21 @@ export default function useEditorTabAgent({
     }
   };
 
+  // Todo: implement Save As functionality when a file is new
+
+  const closeFile = async () => {
+    // TODO: Add confirmation dialog for unsaved changes
+    setFilename(null);
+    setCode("");
+    setLastLoadedCode(null);
+    setDirty(false);
+    setFileIsLoaded(false);
+    setIsNewFile(false);
+    fileRef.current = null;
+    editorRef.current?.setValue("");
+    await deleteStoredFileHandle();
+  };
+
   return {
     lastLoadedCode,
     setLastLoadedCode,
@@ -179,5 +196,6 @@ export default function useEditorTabAgent({
     computeDirty,
     openExistingFile,
     saveCurrentFile,
+    closeFile,
   };
 }
