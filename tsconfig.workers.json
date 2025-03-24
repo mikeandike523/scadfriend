@@ -27,10 +27,6 @@
     "noFallthroughCasesInSwitch": true,
     // "noUncheckedSideEffectImports": true,
 
-    "jsxImportSource": "@emotion/react"
   },
-  "include": ["src"],
-  "exclude":[
-    "src/**/*.tsx"
-  ]
+  "include": ["src/**/*.worker.ts","src/openscad.ts"]
 }
