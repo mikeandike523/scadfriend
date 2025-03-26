@@ -1,5 +1,7 @@
 // Helper Functions
 
+function height_at_x_for_circle(r, x) =  sqrt(r*r - x*x);
+
 // Creates a box occupying the space between two given points
 // Point coordinates are sorted so the contained region will always be a positive volume
 module two_point_box(A, B){
@@ -22,22 +24,41 @@ module two_point_box(A, B){
         cube([width, depth, height]);
 }
 
-// The Human (Right) Eye 
-
-// Item 1: Sclera
-
 EYE_DIAMETER = 24;
 SCLERA_THICKNESS = 1;
-SCLERA_ELONGATED_PORTION_START=10;
-SCLERA_ELONGATED_PORTION_LENGTH=8;
-SCLERA_OPENING_OUTER_DIAMETER=30;
+SCLERA_ELONGATED_PORTION_START=4;
+SCLERA_ELONGATED_PORTION_LENGTH=4;
+SCLERA_OPENING_OUTER_DIAMETER=18;
 
-// Item 2: Choroid
+sclera_elongated_portion_thickness=
+    height_at_x_for_circle(
+        r=EYE_DIAMETER/2,
+        x=SCLERA_ELONGATED_PORTION_START
+    ) -
+    height_at_x_for_circle(
+        r=EYE_DIAMETER/2-SCLERA_THICKNESS,
+        x=SCLERA_ELONGATED_PORTION_START
+    );
 
 CHOROID_THICKNESS=0.250;
 CHOROID_ELONGATED_PORTION_START=SCLERA_ELONGATED_PORTION_START;
-CHOROID_ELONGATED_PORTION_LENGTH=7;
-CHOROID_OPENING_OUTER_DIAMETER=27;
+CHOROID_ELONGATED_PORTION_LENGTH=3;
+
+
+
+sclera_slope=(height_at_x_for_circle(
+    r=EYE_DIAMETER/2,
+    x=SCLERA_ELONGATED_PORTION_START
+    )-SCLERA_OPENING_OUTER_DIAMETER/2)/(
+        SCLERA_ELONGATED_PORTION_LENGTH
+    );
+
+CHOROID_OPENING_OUTER_DIAMETER=(height_at_x_for_circle(
+    r=EYE_DIAMETER/2,
+    x=SCLERA_ELONGATED_PORTION_START
+    )-sclera_elongated_portion_thickness-sclera_slope*CHOROID_ELONGATED_PORTION_LENGTH)*2;
+
+
 
 
 // Module to create an elongated ball (spherical portion with an elongated truncated cone extension)
@@ -87,8 +108,8 @@ module elongated_ball(
 // Now we can define sclera() using the elongated_ball module
 module sclera(){
     elongated_ball(
-        inner_radius=EYE_DIAMETER-SCLERA_THICKNESS,
-        outer_radius=EYE_DIAMETER,
+        inner_radius=EYE_DIAMETER/2-SCLERA_THICKNESS,
+        outer_radius=EYE_DIAMETER/2,
         elongation_start=SCLERA_ELONGATED_PORTION_START,
         elongation_length=SCLERA_ELONGATED_PORTION_LENGTH,
         opening_outer_radius=SCLERA_OPENING_OUTER_DIAMETER/2
@@ -97,18 +118,63 @@ module sclera(){
 
 module choroid(){
     elongated_ball(
-        inner_radius=EYE_DIAMETER-SCLERA_THICKNESS-CHOROID_THICKNESS,
-        outer_radius=EYE_DIAMETER-SCLERA_THICKNESS,
+        inner_radius=EYE_DIAMETER/2-SCLERA_THICKNESS-CHOROID_THICKNESS,
+        outer_radius=EYE_DIAMETER/2-SCLERA_THICKNESS,
         elongation_start=CHOROID_ELONGATED_PORTION_START,
         elongation_length=CHOROID_ELONGATED_PORTION_LENGTH,
         opening_outer_radius=CHOROID_OPENING_OUTER_DIAMETER/2
     );
 }
 
-// @export sclera
-color("white")
-sclera();
+module ciliary_body(){
+    cube(size=10);
+}
 
-// @export choroid
+module cut_box(){
+    two_point_box([
+        -100,
+        -100,
+        -100
+    ],[
+        100,
+        0,
+        100
+    ]);
+}
+
+module sclera_cut(){
+    difference(){
+        sclera();
+        cut_box();
+    }
+}
+
+module choroid_cut(){
+    difference(){
+        choroid();
+        cut_box();
+    }
+}
+
+module ciliary_body_cut(){
+    difference(){
+        ciliary_body();
+        cut_box();
+    }
+}
+
+
+
+
+// @export sclera-cut
+color("white")
+sclera_cut();
+
+// @export choroid-cut
 color("red")
-choroid();
+choroid_cut();
+
+
+// @export ciliary-body-cut
+color("orange")
+ciliary_body_cut();
