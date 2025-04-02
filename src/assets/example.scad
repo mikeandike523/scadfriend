@@ -1,11 +1,38 @@
-// Helper Functions
+// ---- HELPER FUNCTIONS AND MODULES ----
 
 function height_at_x_for_circle(r, x) =  sqrt(r*r - x*x);
 
-// Creates a box occupying the space between two given points
-// Point coordinates are sorted so the contained region will always be a positive volume
+function normalize3d(v) = 
+    let (len = norm(v))
+    len == 0 ? [0, 0, 0] : [v[0]/len, v[1]/len, v[2]/len];
+
+function normalize2d(v) = 
+    let (len = norm(v))
+    len == 0 ? [0, 0] : [v[0]/len, v[1]/len];
+
+function orthogonal2D(v) = [-v[1], v[0]];
+
+function transformToBasis2D(v, basis0, basis1) =
+    [
+        v[0] * basis0[0] + v[1] * basis1[0],
+        v[0] * basis0[1] + v[1] * basis1[1]
+    ];
+
+function transformPointsToBasis2D(points, basis0, basis1) =
+    [ for (pt = points) transformToBasis2D(pt, basis0, basis1) ];
+
+module rotate_extrude_x(profile_points) {
+    transformed_points = [ for (p = profile_points) [-p[1], p[0] ] ];
+    rotate([0, 90, 0])
+        rotate_extrude($fn=64)
+            polygon(points = transformed_points);
+}
+
+function add2DOffset(points, offset) =
+    [for (p = points) [p[0] + offset[0], p[1] + offset[1]]];
+
 module two_point_box(A, B){
-    // Sort coordinates to ensure positive volume
+
     x_min = min(A[0], B[0]);
     y_min = min(A[1], B[1]);
     z_min = min(A[2], B[2]);
@@ -14,51 +41,15 @@ module two_point_box(A, B){
     y_max = max(A[1], B[1]);
     z_max = max(A[2], B[2]);
     
-    // Calculate dimensions
     width = x_max - x_min;
     depth = y_max - y_min;
     height = z_max - z_min;
     
-    // Create the box
     translate([x_min, y_min, z_min])
         cube([width, depth, height]);
 }
 
-EYE_DIAMETER = 24;
-SCLERA_THICKNESS = 1;
-SCLERA_ELONGATED_PORTION_START=4;
-SCLERA_ELONGATED_PORTION_LENGTH=4;
-SCLERA_OPENING_OUTER_DIAMETER=18;
-
-sclera_elongated_portion_thickness=
-    height_at_x_for_circle(
-        r=EYE_DIAMETER/2,
-        x=SCLERA_ELONGATED_PORTION_START
-    ) -
-    height_at_x_for_circle(
-        r=EYE_DIAMETER/2-SCLERA_THICKNESS,
-        x=SCLERA_ELONGATED_PORTION_START
-    );
-
-CHOROID_THICKNESS=0.250;
-CHOROID_ELONGATED_PORTION_START=SCLERA_ELONGATED_PORTION_START;
-CHOROID_ELONGATED_PORTION_LENGTH=3;
-
-
-
-sclera_slope=(height_at_x_for_circle(
-    r=EYE_DIAMETER/2,
-    x=SCLERA_ELONGATED_PORTION_START
-    )-SCLERA_OPENING_OUTER_DIAMETER/2)/(
-        SCLERA_ELONGATED_PORTION_LENGTH
-    );
-
-CHOROID_OPENING_OUTER_DIAMETER=(height_at_x_for_circle(
-    r=EYE_DIAMETER/2,
-    x=SCLERA_ELONGATED_PORTION_START
-    )-sclera_elongated_portion_thickness-sclera_slope*CHOROID_ELONGATED_PORTION_LENGTH)*2;
-
-
+// ---- DESIGN SPECIFIC HELPER FUNCTIONS AND MODULES ----
 
 
 // Module to create an elongated ball (spherical portion with an elongated truncated cone extension)
@@ -105,7 +96,94 @@ module elongated_ball(
     }
 }
 
-// Now we can define sclera() using the elongated_ball module
+// ---- DESIGN PARAMETERS ----
+
+EYE_DIAMETER = 24;
+SCLERA_THICKNESS = 0.75;
+SCLERA_ELONGATED_PORTION_START=4;
+SCLERA_ELONGATED_PORTION_LENGTH=4;
+SCLERA_OPENING_OUTER_DIAMETER=18;
+
+sclera_elongated_portion_thickness=
+    height_at_x_for_circle(
+        r=EYE_DIAMETER/2,
+        x=SCLERA_ELONGATED_PORTION_START
+    ) -
+    height_at_x_for_circle(
+        r=EYE_DIAMETER/2-SCLERA_THICKNESS,
+        x=SCLERA_ELONGATED_PORTION_START
+    );
+
+CHOROID_THICKNESS=0.250;
+CHOROID_ELONGATED_PORTION_START=SCLERA_ELONGATED_PORTION_START;
+CHOROID_ELONGATED_PORTION_LENGTH=3;
+
+CILIARY_BODY_LENGTH_ALONG_BASIS_0 = 1.5;
+
+// x = fraction along ciliary body region along basis 0
+// y = proportion of choroid thicknesses along basis 1
+CILIARY_BODY_PROFILE_PROPORTION=[
+    [0,0],
+    [1,0],
+    [0.7,2.5],
+    [0.3,3.5]
+];
+
+// ---- DERIVED PARAMETERS ----
+
+sclera_slope=(height_at_x_for_circle(
+    r=EYE_DIAMETER/2,
+    x=SCLERA_ELONGATED_PORTION_START
+    )-SCLERA_OPENING_OUTER_DIAMETER/2)/(
+        SCLERA_ELONGATED_PORTION_LENGTH
+    );
+
+choroid_opening_outer_diameter=(height_at_x_for_circle(
+    r=EYE_DIAMETER/2,
+    x=SCLERA_ELONGATED_PORTION_START
+    )-sclera_elongated_portion_thickness-sclera_slope*CHOROID_ELONGATED_PORTION_LENGTH)*2;
+
+choroid_enlongated_portion_thickness =
+(
+    height_at_x_for_circle(
+        r=EYE_DIAMETER/2-SCLERA_THICKNESS,
+        x=CHOROID_ELONGATED_PORTION_START
+    )
+) - (
+    height_at_x_for_circle(
+        r=EYE_DIAMETER/2-SCLERA_THICKNESS-CHOROID_THICKNESS,
+        x=CHOROID_ELONGATED_PORTION_START
+    )
+);
+
+ciliary_body_profile_basis_0 = normalize2d([
+    1, -sclera_slope
+]);
+
+ciliary_body_profile_basis_1 = -orthogonal2D(ciliary_body_profile_basis_0);
+
+ciliary_body_profile_origin=[
+    CHOROID_ELONGATED_PORTION_START+CHOROID_ELONGATED_PORTION_LENGTH-CILIARY_BODY_LENGTH_ALONG_BASIS_0*ciliary_body_profile_basis_0[0],
+    choroid_opening_outer_diameter/2-choroid_enlongated_portion_thickness - CILIARY_BODY_LENGTH_ALONG_BASIS_0*ciliary_body_profile_basis_0[1]
+];
+
+ciliary_body_profile = 
+add2DOffset(
+    transformPointsToBasis2D(
+        CILIARY_BODY_PROFILE_PROPORTION
+    ,
+    CILIARY_BODY_LENGTH_ALONG_BASIS_0 *
+    ciliary_body_profile_basis_0
+        ,
+    choroid_enlongated_portion_thickness*ciliary_body_profile_basis_1
+    ,)
+,
+    ciliary_body_profile_origin
+);
+
+
+// ---- DESIGN PARTS ----
+
 module sclera(){
     elongated_ball(
         inner_radius=EYE_DIAMETER/2-SCLERA_THICKNESS,
@@ -122,12 +200,14 @@ module choroid(){
         outer_radius=EYE_DIAMETER/2-SCLERA_THICKNESS,
         elongation_start=CHOROID_ELONGATED_PORTION_START,
         elongation_length=CHOROID_ELONGATED_PORTION_LENGTH,
-        opening_outer_radius=CHOROID_OPENING_OUTER_DIAMETER/2
+        opening_outer_radius=choroid_opening_outer_diameter/2
     );
 }
 
 module ciliary_body(){
-    cube(size=10);
+    rotate_extrude_x(
+        ciliary_body_profile
+    );
 }
 
 module cut_box(){
@@ -163,8 +243,7 @@ module ciliary_body_cut(){
     }
 }
 
-
-
+// ---- DESIGN PART EXPORTS ----
 
 // @export sclera-cut
 color("white")
@@ -173,7 +252,6 @@ sclera_cut();
 // @export choroid-cut
 color("red")
 choroid_cut();
-
 
 // @export ciliary-body-cut
 color("orange")

@@ -55,6 +55,10 @@ export interface EditorTabAgent {
   closeFile: () => Promise<void>;
 }
 
+const isMac = () => {
+  return navigator.platform.toUpperCase().indexOf('MAC') >= 0;
+};
+
 export default function useEditorTabAgent({
   code,
   setCode,
@@ -71,6 +75,8 @@ export default function useEditorTabAgent({
   const [fileIsLoaded, setFileIsLoaded] = useState(false);
   const editorRef = useRef<MonacoEditorInterface | null>(null);
   const [editorLoaded, setEditorLoaded] = useState(false);
+
+
 
   useEffect(() => {
     if (!editorLoaded) {
@@ -149,7 +155,7 @@ export default function useEditorTabAgent({
     }
   };
 
-  const saveCurrentFile = async () => {
+  const saveCurrentFile = useCallback(async () => {
     if (fileRef.current) {
       const didSave = await saveFile(fileRef.current, code);
 
@@ -160,7 +166,7 @@ export default function useEditorTabAgent({
         setIsNewFile(false);
       }
     }
-  };
+  },[code]);
 
   // Todo: implement Save As functionality when a file is new
 
@@ -176,6 +182,35 @@ export default function useEditorTabAgent({
     editorRef.current?.setValue("");
     await deleteStoredFileHandle();
   };
+
+  const onCtrlS = useCallback(() => {
+    const canSave= editorLoaded && dirty && (fileIsLoaded || isNewFile)
+    if(canSave) {
+      saveCurrentFile();
+    }
+  },[editorLoaded, dirty, fileIsLoaded, isNewFile, saveCurrentFile])
+
+  useEffect(() => {
+    const isUserOnMac = isMac();
+
+    const handleSaveShortcut = (event: KeyboardEvent) => {
+      if (
+        (isUserOnMac && event.metaKey && event.key === 's') ||
+        (!isUserOnMac && event.ctrlKey && event.key === 's')
+      ) {
+        event.preventDefault();
+        onCtrlS();
+      }
+    };
+
+    document.addEventListener('keydown', handleSaveShortcut);
+
+    return () => {
+      document.removeEventListener('keydown', handleSaveShortcut);
+    };
+  }, [onCtrlS]);
+
+
 
   return {
     lastLoadedCode,
