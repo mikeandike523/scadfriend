@@ -129,6 +129,28 @@ CILIARY_BODY_PROFILE_PROPORTION=[
     [0.3,3.5]
 ];
 
+LENS_DIAMETER=10;
+LENS_THICKNESS=4;
+
+
+
+// x = fraction of lens radius from center (a.k.a. 'r')
+// y= fraction of half of the thickness from center (a.k.a 'h')
+LENS_FRONT_PROFILE = [
+    [0.0, 1.0],
+    [0.4, 0.95],
+    [0.6, 0.8],
+    [0.8,0.6],
+    [0.9,0.4],
+    [1, 0]
+];
+
+LENS_BACKSIDE_SCALE = 1.2;
+
+LENS_X=5.95;
+
+
+
 // ---- DERIVED PARAMETERS ----
 
 sclera_slope=(height_at_x_for_circle(
@@ -181,6 +203,28 @@ add2DOffset(
     ciliary_body_profile_origin
 );
 
+// Parameters for real-world scaling
+lens_radius = LENS_DIAMETER / 2;
+
+// Scale normalized points to real-world size
+function arrange_lens_profile(profile) = 
+    [ for (pt = profile) [ pt[1] * (LENS_THICKNESS / 2),pt[0] * lens_radius] ];
+
+
+// Compute the reversed and transformed backside profile
+lense_back_profile = [
+    for (i = [len(LENS_FRONT_PROFILE)-1 : -1 : 0])
+        [LENS_FRONT_PROFILE[i][0], -LENS_FRONT_PROFILE[i][1] * LENS_BACKSIDE_SCALE]
+];
+
+lens_profile=concat(
+    LENS_FRONT_PROFILE, lense_back_profile
+);
+
+
+
+// Generate the final scaled and mirrored profile
+lens_world_profile = arrange_lens_profile(lens_profile);
 
 // ---- DESIGN PARTS ----
 
@@ -207,6 +251,16 @@ module choroid(){
 module ciliary_body(){
     rotate_extrude_x(
         ciliary_body_profile
+    );
+}
+
+module lens(){
+    rotate_extrude_x(
+        add2DOffset(
+            lens_world_profile
+        ,[
+       LENS_X,
+       0])
     );
 }
 
@@ -243,16 +297,27 @@ module ciliary_body_cut(){
     }
 }
 
+module lens_cut(){
+    difference(){
+        lens();
+        cut_box();
+    }
+}
+
 // ---- DESIGN PART EXPORTS ----
 
 // @export sclera-cut
-color("white")
+color("rgb(255,255,255)")
 sclera_cut();
 
 // @export choroid-cut
-color("red")
+color("rgb(255,0,0)")
 choroid_cut();
 
 // @export ciliary-body-cut
-color("orange")
+color("rgb(255,100,100)")
 ciliary_body_cut();
+
+// @export lens-cut
+color("rgb(222, 209, 164)")
+lens_cut();

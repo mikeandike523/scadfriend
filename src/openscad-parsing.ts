@@ -120,6 +120,7 @@ export function identifyParts(sourceCode: string): { [name: string]: OpenSCADPar
     // Store the part. Note that result is trimmed.
     parts[block.name] = { ownSourceCode: result.trim() };
     if (color) {
+      console.log(`Color ${block.name}: ${color}`)
       parts[block.name].color = color;
     }
   }
