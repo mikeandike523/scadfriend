@@ -1,0 +1,9 @@
+public/openscad.mcad.d.ts filter=lfs diff=lfs merge=lfs -text
+public/openscad.fonts.js filter=lfs diff=lfs merge=lfs -text
+public/openscad.js filter=lfs diff=lfs merge=lfs -text
+public/openscad.mcad.js filter=lfs diff=lfs merge=lfs -text
+public/openscad.wasm filter=lfs diff=lfs merge=lfs -text
+public/openscad.wasm.js filter=lfs diff=lfs merge=lfs -text
+public/files.d.ts filter=lfs diff=lfs merge=lfs -text
+public/openscad.d.ts filter=lfs diff=lfs merge=lfs -text
+public/openscad.fonts.d.ts filter=lfs diff=lfs merge=lfs -text
