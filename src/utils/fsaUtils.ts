@@ -26,7 +26,6 @@ export async function storeFileHandle(
 
         request.onsuccess = () => {
           tx.oncomplete = () => {
-            console.log("File handle stored successfully");
             db.close();
             resolve();
           };
@@ -56,12 +55,10 @@ export async function getStoredFileHandle(): Promise<FileSystemFileHandle | null
     const request = store.get("lastFile");
     return await new Promise((resolve, reject) => {
       request.onsuccess = () => {
-        console.log("File handle retrieved successfully", request.result);
         db.close();
         resolve(request.result || null);
       };
       request.onerror = () => {
-        console.error("Failed to retrieve file handle", request.error);
         db.close();
         reject(request.error);
       };
@@ -81,7 +78,6 @@ export async function deleteStoredFileHandle(): Promise<void> {
     return new Promise((resolve, reject) => {
       request.onsuccess = () => {
         tx.oncomplete = () => {
-          console.log("File handle deleted successfully");
           db.close();
           resolve();
         };
@@ -153,18 +149,13 @@ export async function openExistingFile(
       }
     ).queryPermission({ mode: "readwrite" });
     if (permissionState !== "granted") {
-      const newPermissionState = await (
+       await (
         handle as object as {
           requestPermission: (options: {
             mode: "readwrite" | "read";
           }) => Promise<"granted" | "denied" | "prompt">;
         }
       ).requestPermission({ mode: "readwrite" });
-      if (newPermissionState !== "granted") {
-        console.log("Read/write permission was not granted for the file.");
-        // You might want to handle this case, perhaps by only allowing read operations
-        // or by informing the user that they won't be able to save changes to this file.
-      }
     }
     const file = await handle.getFile();
     const content = await file.text();

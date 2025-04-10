@@ -1,6 +1,5 @@
-// openscad.worker.ts
-// Note: This file runs in a Web Worker context.
-import OpenSCAD from "./openscad";
+// @ts-expect-error Need to circumvent bundling issues and load from public directory
+await import("/loadOscadUtil.js?url");
 
 // (Optional) Define the interface for an OpenSCAD part if not imported.
 export interface OpenSCADPart {
@@ -13,7 +12,9 @@ interface RenderRequest {
   command: "render";
   partName: string;
   part: OpenSCADPart;
-  backend?: Backend; // Optional backend parameter
+  backend?: Backend;
+  fonts?: boolean;
+  mcad?: boolean;
 }
 
 interface LogMessage {
@@ -41,7 +42,7 @@ interface ErrorMessage {
 // CGAL
 // Very slow, but much more guaranteed to be accurate
 // Good for export
-type Backend = "CGAL" | "Manifold"
+type Backend = "CGAL" | "Manifold";
 
 // A helper to send a log message back to the main thread.
 const sendLog = (partName: string, message: string) => {
@@ -55,12 +56,21 @@ const sendLog = (partName: string, message: string) => {
 self.onmessage = async (event: MessageEvent<RenderRequest>) => {
   const data = event.data;
   if (data.command !== "render") return;
-  const { partName, part, backend = "Manifold" } = data; // Default to Manifold if not specified
+  const {
+    partName,
+    part,
+    backend = "Manifold",
+    fonts = true,
+    mcad = true,
+  } = data; // Default to Manifold if not specified
 
   try {
     sendLog(partName, "Initializing OpenSCAD...");
     // Load the WASM module. (Assuming your OpenSCAD module returns a promise.)
-    const instance = await OpenSCAD({ noInitialRun: true });
+    const instance = await oscadUtil.createInstance({
+      fonts,
+      mcad,
+    });
     sendLog(partName, "OpenSCAD initialized.");
 
     sendLog(partName, "Writing input file...");

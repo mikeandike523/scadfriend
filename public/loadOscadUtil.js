@@ -1,5 +1,3 @@
-import OpenSCAD from "/openscad.js";
-
 // OPTIONAL: add fonts to the FS
 import { addFonts } from "/openscad.fonts.js";
 
@@ -23,7 +21,7 @@ globalThis.oscadUtil = {
       addFonts(instance)
     }
     if(mcad){
-      addMcad(instance)
+      addMCAD(instance)
     }
     return instance
   }

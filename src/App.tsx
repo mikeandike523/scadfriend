@@ -59,7 +59,6 @@ function getColorOrDefault(
     b: color.blue(),
     a: color.alpha(),
   };
-  console.log(colorString, color, r, g, b, a)
 
   return rgbaByteToInt(r, g, b, Math.round(a * 255));
 }

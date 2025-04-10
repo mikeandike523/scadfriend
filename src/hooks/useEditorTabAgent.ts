@@ -118,7 +118,6 @@ export default function useEditorTabAgent({
   const checkForExistingFile = useCallback(
     async function checkForExistingFile() {
       if (!editorLoaded) return;
-      console.log("Trying to reopen last file...");
       const result = await reopenLastFile();
       if (result) {
         const { fileHandle, content } = result;
@@ -135,7 +134,6 @@ export default function useEditorTabAgent({
     [setCode, editorLoaded]
   );
   useEffect(() => {
-    console.log("Checking for existing file...");
     checkForExistingFile();
   }, [checkForExistingFile]);
 
