@@ -1,0 +1,2 @@
+openscad.fonts.js filter=lfs diff=lfs merge=lfs -text
+openscad.mcad.js filter=lfs diff=lfs merge=lfs -text

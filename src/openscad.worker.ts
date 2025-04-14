@@ -1,5 +1,8 @@
-// @ts-expect-error Need to circumvent bundling issues and load from public directory
-await import("/loadOscadUtil.js?url");
+
+
+import { SerializableObject, toSerializableObject } from "./utils/serialization"
+import oscadUtil from "./oscadUtil"
+
 
 // (Optional) Define the interface for an OpenSCAD part if not imported.
 export interface OpenSCADPart {
@@ -32,7 +35,7 @@ interface ResultMessage {
 interface ErrorMessage {
   type: "error";
   partName: string;
-  error: string;
+  error: SerializableObject;
 }
 
 // Manifold:  Ultra Fast
@@ -54,6 +57,7 @@ const sendLog = (partName: string, message: string) => {
 };
 
 self.onmessage = async (event: MessageEvent<RenderRequest>) => {
+
   const data = event.data;
   if (data.command !== "render") return;
   const {
@@ -105,16 +109,9 @@ self.onmessage = async (event: MessageEvent<RenderRequest>) => {
     (self as DedicatedWorkerGlobalScope).postMessage({
       type: "error",
       partName,
-      error:
-        err instanceof Error
-          ? err.message
-          : // It is guaranteed in javascript that anything can be converted to a string
-            // even if the string isn't very meaningful
-            (
-              err as {
-                toString: () => string;
-              }
-            ).toString(),
+      error: toSerializableObject(err,{
+        enumerableOnly: false,
+      })
     } as ErrorMessage);
   }
 };

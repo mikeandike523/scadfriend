@@ -24,6 +24,7 @@ import { identifyParts, OpenSCADPart } from "./openscad-parsing";
 // Import our axis helper.
 import { createLabeledAxis } from "./AxisVisualizer";
 import useFSAUnsupported from "./hooks/useFSAUnsupported";
+import { formatError } from "./utils/serialization";
 
 const MAX_MESSAGES = 200;
 
@@ -448,7 +449,7 @@ function App() {
       // Create a new worker using Vite’s built-in worker support.
       const worker = new Worker(
         new URL("./openscad.worker.ts", import.meta.url),
-        { type: "module" }
+        { type:"module"}
       );
 
       // Listen for messages from the worker.
@@ -463,7 +464,7 @@ function App() {
 
           resolve();
         } else if (data.type === "error") {
-          log(`Error rendering part ${partName}: ${data.error}`);
+          log(`Error rendering part ${partName}:\n${formatError(data.error)}`);
           worker.terminate();
           reject(new Error(data.error));
         }
@@ -529,7 +530,7 @@ function App() {
       updateThreeScene();
     } catch (error) {
       alert(`Rendering failed. Check the console for more details.`);
-      log(`Rendering failed: ${error}`);
+      log(`Rendering failed: ${formatError(error)}`);
     } finally {
       setIsProcessing(false);
     }

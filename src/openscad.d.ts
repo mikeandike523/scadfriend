@@ -22,3 +22,5 @@ export interface FS {
     writeFile(path: string, data: string | ArrayBufferView): void;
     unlink(path: string): void;
 }
+declare function OpenSCAD(options?: InitOptions): Promise<OpenSCAD>;
+export default OpenSCAD;

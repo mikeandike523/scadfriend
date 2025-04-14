@@ -28,7 +28,10 @@
   },
   "include": [
     "src/**/*.worker.ts",
-    "src/third-part-defs/openscad-interface.d.ts",
-    "src/global-defs/loadOscadUtil.d.ts"
+    "src/utils/**/*.ts",
+    "src/oscadUtil.ts",
+  ],
+  "exclude": [
+    "src/utils/fsaUtils.ts"
   ]
 }
