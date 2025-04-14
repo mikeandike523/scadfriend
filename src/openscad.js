@@ -7,7 +7,6 @@ async function OpenSCAD(options) {
         const url = "/openscad.wasm.js"
         const request = await fetch(url);
         const requestText = await request.text();
-        console.log("requestText",requestText)
         wasmModule = "data:text/javascript;base64," + btoa(requestText);
     }
     const module = {
