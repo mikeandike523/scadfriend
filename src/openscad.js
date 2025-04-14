@@ -6,7 +6,9 @@ async function OpenSCAD(options) {
         // Load from public directory
         const url = "/openscad.wasm.js"
         const request = await fetch(url);
-        wasmModule = "data:text/javascript;base64," + btoa(await request.text());
+        const requestText = await request.text();
+        console.log(requestText)
+        wasmModule = "data:text/javascript;base64," + btoa(requestText);
     }
     const module = {
         noInitialRun: true,
