@@ -8,11 +8,10 @@ import OpenSCAD from "./openscad.js";
 // import { addMCAD } from "./openscad.mcad.js";
 
 const createInstance = async (
-    // {
-    //   fonts=true,
-    //   mcad=true,
-    // }={}
-    {}:{
+    {
+      fonts=true,
+      mcad=true,
+    }:{
       fonts?: boolean,
       mcad?:boolean
     }={}
@@ -22,14 +21,14 @@ const createInstance = async (
       // Previous testing shows noInitialRun should be true for it to work at all
       // I don't really understand what this is for
     });
-    // if(fonts){
-    //   const addFonts = (await import("./openscad.fonts.js")).addFonts
-    //   addFonts(instance)
-    // }
-    // if(mcad){
-    //   const addMCAD = (await import("./openscad.mcad.js")).addMCAD
-    //   addMCAD(instance)
-    // }
+    if(fonts){
+      const addFonts = (await import("./openscad.fonts.js")).addFonts
+      addFonts(instance)
+    }
+    if(mcad){
+      const addMCAD = (await import("./openscad.mcad.js")).addMCAD
+      addMCAD(instance)
+    }
     return instance
   }
 
