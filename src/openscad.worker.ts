@@ -106,6 +106,7 @@ self.onmessage = async (event: MessageEvent<RenderRequest>) => {
       stl: output,
     } as ResultMessage);
   } catch (err: unknown) {
+    console.error(err);
     (self as DedicatedWorkerGlobalScope).postMessage({
       type: "error",
       partName,
