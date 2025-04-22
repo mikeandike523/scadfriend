@@ -14,7 +14,8 @@ import "@fontsource/fira-code/600.css";
 import "@fontsource/fira-code/700.css";
 import "@fontsource/fira-code/index.css";
 
-import { FaHome } from "react-icons/fa";
+import { FaHome, FaFileDownload } from "react-icons/fa";
+
 import "./App.css";
 import EditorTab from "./components/EditorTab";
 import useEditorTabAgent from "./hooks/useEditorTabAgent";
@@ -449,7 +450,7 @@ function App() {
       // Create a new worker using Vite’s built-in worker support.
       const worker = new Worker(
         new URL("./openscad.worker.ts", import.meta.url),
-        { type:"module"}
+        { type: "module" }
       );
 
       // Listen for messages from the worker.
@@ -536,6 +537,35 @@ function App() {
     }
   };
 
+  const downloadPart = (partName: string) => {
+    const part = completedModelRef.current[partName];
+    if (!part || !part.stl) {
+      alert(`Part "${partName}" not found or not rendered yet.`);
+      return;
+    }
+
+    // 1) Make a Blob from the raw Uint8Array
+    const blob = new Blob(
+      // Blob constructor takes an array of ArrayBufferViews or ArrayBuffers
+      [part.stl],
+      { type: "application/octet-stream" }
+    );
+
+    // 2) Create an object URL
+    const url = URL.createObjectURL(blob);
+
+    // 3) Programmatically click an <a> to download
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = `${partName}.stl`;
+    // On some browsers you need to append it to the DOM for click() to work
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+
+    // 4) Clean up
+    URL.revokeObjectURL(url);
+  };
   return (
     <Div
       display="flex"
@@ -585,7 +615,7 @@ function App() {
           height="100%"
           display="grid"
           gridTemplateRows="1fr"
-          gridTemplateColumns="1fr 3fr"
+          gridTemplateColumns="1.4fr 3fr"
         >
           <Div
             background="white"
@@ -597,19 +627,57 @@ function App() {
             {Object.keys(partSettings).length > 0 ? (
               <>
                 {Object.entries(partSettings).map(([name, settings], index) => (
-                  <Label whiteSpace="nowrap" key={index}>
-                    <Input
-                      type="checkbox"
-                      checked={settings.visible}
-                      onChange={() => {
-                        const currentValue = partSettings[name].visible;
-                        partSettings[name].visible = !currentValue;
-                        setPartSettings({ ...partSettings });
-                      }}
-                    />
-                    &nbsp;
-                    {name}
-                  </Label>
+                  <Div
+                    display="flex"
+                    flexDirection="row"
+                    alignItems="center"
+                    gap="0.7em"
+                  >
+                    <Label
+                      whiteSpace="nowrap"
+                      key={index}
+                      display="flex"
+                      flexDirection="row"
+                      alignItems="center"
+                      gap="0.7em"
+                    >
+                      <Input
+                        display="flex"
+                        flexDirection="row"
+                        alignItems="center"
+                        gap="0.7em"
+                        type="checkbox"
+                        checked={settings.visible}
+                        onChange={() => {
+                          const currentValue = partSettings[name].visible;
+                          partSettings[name].visible = !currentValue;
+                          setPartSettings({ ...partSettings });
+                        }}
+                      />
+                      {name}
+                    </Label>
+                    {completedModelRef.current[name] &&
+                      completedModelRef.current[name].stl && (
+                        <Button
+                          width="1.25rem"
+                          height="1.25rem"
+                          display="flex"
+                          alignItems="center"
+                          justifyContent="center"
+                          title="Download STL"
+                          borderRadius="50%"
+                          onClick={()=>{
+                            downloadPart(name);
+                          }}
+                        >
+                          <FaFileDownload
+                            style={{
+                              fontSize: "0.75rem",
+                            }}
+                          />
+                        </Button>
+                      )}
+                  </Div>
                 ))}
               </>
             ) : (
