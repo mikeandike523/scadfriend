@@ -104,15 +104,6 @@ SCLERA_ELONGATED_PORTION_START=4;
 SCLERA_ELONGATED_PORTION_LENGTH=4;
 SCLERA_OPENING_OUTER_DIAMETER=18;
 
-sclera_elongated_portion_thickness=
-    height_at_x_for_circle(
-        r=EYE_DIAMETER/2,
-        x=SCLERA_ELONGATED_PORTION_START
-    ) -
-    height_at_x_for_circle(
-        r=EYE_DIAMETER/2-SCLERA_THICKNESS,
-        x=SCLERA_ELONGATED_PORTION_START
-    );
 
 CHOROID_THICKNESS=0.250;
 CHOROID_ELONGATED_PORTION_START=SCLERA_ELONGATED_PORTION_START;
@@ -149,9 +140,53 @@ LENS_BACKSIDE_SCALE = 1.2;
 
 LENS_X=5.95;
 
+FIBERS_THICKNESS_OUTER = 0.45;
+FIBERS_THICKNESS_INNER = 1.6;
+FIBERS_DENT=-0.25;
+FIBERS_DIAMETER=17;
+FIBERS_X = 5.7;
+
+IRIS_PROFILE=[
+    [3.75,0],
+    [3.25,4],
+    [2.75, 6],
+    [1, 8],
+    [1.5, 8.35],
+    [2.15, 7.6],
+    [3, 6.6],
+    [4, 5],
+    [4.5,3.8],
+    [5.25,2.25],
+    [4.9,1.85],
+    [4.9,0]
+];
+IRIS_X = 5.5;
+IRIS_SCALE_R=1.05;
+IRIS_SCALE_H=1.0;
+PUPIL_DIAMETER=3;
+
+// As fraction of the outer radius of the
+// opening of the sclear component
+CORNEA_OUTER_PROFILE=[
+    [],
+
+
+];
+CORNEA_THICKNESS = 0.75;
 
 
 // ---- DERIVED PARAMETERS ----
+
+
+sclera_elongated_portion_thickness=
+    height_at_x_for_circle(
+        r=EYE_DIAMETER/2,
+        x=SCLERA_ELONGATED_PORTION_START
+    ) -
+    height_at_x_for_circle(
+        r=EYE_DIAMETER/2-SCLERA_THICKNESS,
+        x=SCLERA_ELONGATED_PORTION_START
+    );
 
 sclera_slope=(height_at_x_for_circle(
     r=EYE_DIAMETER/2,
@@ -221,10 +256,22 @@ lens_profile=concat(
     LENS_FRONT_PROFILE, lense_back_profile
 );
 
-
-
-// Generate the final scaled and mirrored profile
 lens_world_profile = arrange_lens_profile(lens_profile);
+
+fibers_profile = [
+    [FIBERS_DENT, 0],
+    [0, FIBERS_DIAMETER/2],
+    [FIBERS_THICKNESS_OUTER, FIBERS_DIAMETER/2],
+    [FIBERS_DENT+FIBERS_THICKNESS_INNER, 0]
+];
+
+
+fibers_world_profile = add2DOffset(fibers_profile, [FIBERS_X, 0]);
+
+cornea_x = SCLERA_ELONGATED_PORTION_START + SCLERA_ELONGATED_PORTION_LENGTH;
+
+
+
 
 // ---- DESIGN PARTS ----
 
@@ -262,6 +309,36 @@ module lens(){
        LENS_X,
        0])
     );
+}
+
+module fibers(){
+    difference(){
+        translate([FIBERS_X, 0,0])
+        rotate_extrude_x(fibers_profile);
+        ciliary_body();
+        lens();
+    }
+}
+
+module iris(){
+    difference(){
+        translate([IRIS_X,0,0])
+            scale([IRIS_SCALE_H,IRIS_SCALE_R, IRIS_SCALE_R])
+                difference(){
+                    rotate_extrude_x(IRIS_PROFILE);
+                    rotate_extrude_x([
+                        [-10,0],
+                        [-10, PUPIL_DIAMETER/2],
+                        [10, PUPIL_DIAMETER/2],
+                        [10, 0],
+                    ]);            
+                }
+        sclera();
+        choroid();
+        ciliary_body();
+        
+    }
+
 }
 
 module cut_box(){
@@ -304,6 +381,20 @@ module lens_cut(){
     }
 }
 
+module fibers_cut(){
+    difference(){
+        fibers();
+        cut_box();
+    };
+}
+
+module iris_cut(){
+    difference(){
+        iris();
+        cut_box();
+    }
+}
+
 // ---- DESIGN PART EXPORTS ----
 
 // @export sclera-cut
@@ -321,3 +412,11 @@ ciliary_body_cut();
 // @export lens-cut
 color("rgb(222, 209, 164)")
 lens_cut();
+
+// @export fibers-cut
+color("rgb(125, 125,244)")
+fibers_cut();
+
+// @export iris-cut
+color("rgb(244,233,158)")
+iris_cut();

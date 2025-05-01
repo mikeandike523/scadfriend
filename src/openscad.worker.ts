@@ -1,8 +1,11 @@
+import { type FS } from "./openscad";
+import oscadUtil from "./oscadUtil";
+import { type OpenSCAD } from "./openscad";
 
-
-import { SerializableObject, toSerializableObject } from "./utils/serialization"
-import oscadUtil from "./oscadUtil"
-
+import {
+  SerializableObject,
+  toSerializableObject,
+} from "./utils/serialization";
 
 // (Optional) Define the interface for an OpenSCAD part if not imported.
 export interface OpenSCADPart {
@@ -38,6 +41,83 @@ interface ErrorMessage {
   error: SerializableObject;
 }
 
+/**
+ *
+ * Detects `include` or `use` statements whose path begins with "/SFLibs/"
+ *
+ * Returns an array of paths (prefix not included)
+ *
+ * Note:
+ *
+ * The relevant syntax in OpenSCAD is:
+ *
+ * include </SFLibs/library.scad>; or
+ * use </SFLibs/library.scad>;
+ *
+ * @param code - OpenSCAD source code
+ */
+function detectSFLibsInclusions(code: string): string[] {
+  const regex = /(include|use)\s+<\s*\/SFLibs\/([^>]+)>/g;
+  const matches: string[] = [];
+  let match: RegExpExecArray | null;
+
+  while ((match = regex.exec(code)) !== null) {
+    matches.push(match[2]);
+  }
+
+  return matches;
+}
+
+async function grabSFLibFile(path: string) {
+  const url = "/SFLibs/" + path;
+  const response = await fetch(url, {
+    headers: {
+      "Content-Type": "text/plain; charset=UTF-8",
+    },
+  });
+  if (!response.ok) {
+    if (response.status === 404) {
+      throw new Error(`Failed to load SFLib file: ${url}, file not found.`);
+    }
+    throw new Error(
+      `Failed to load SFLib file: ${url}, status: ${response.status}`
+    );
+  }
+  return await response.text();
+}
+
+async function addSFLibs(instance: OpenSCAD, paths: string[]) {
+  const fs = instance.FS as FS;
+  fs.mkdir("/SFLibs");
+  const alreadyCreatedFolders = new Set<string>();
+  for (const path of paths) {
+    const segments = path.split("/");
+    if (segments.length === 0) {
+      continue;
+    }
+    if (alreadyCreatedFolders.has(path)) continue;
+    alreadyCreatedFolders.add(path);
+    if (segments.length === 1) {
+      const code = await grabSFLibFile(path);
+      console.log(code)
+      fs.writeFile("/SFLibs/" + path, code);
+    } else {
+      const priorFolders: string[] = [];
+      for (let i = 0; i < segments.length - 1; i++) {
+        const segmentsAcc = segments.slice(0, i + 1).join("/");
+        priorFolders.push(segmentsAcc);
+      }
+      for (const folder of priorFolders) {
+        if (alreadyCreatedFolders.has(folder)) continue;
+        fs.mkdir("/SFLibs/" + folder);
+        alreadyCreatedFolders.add(folder);
+      }
+      const code = await grabSFLibFile(path);
+      fs.writeFile("/SFLibs/" + path, code);
+    }
+  }
+}
+
 // Manifold:  Ultra Fast
 // Works in most cases perfectly
 // Good for render
@@ -57,7 +137,6 @@ const sendLog = (partName: string, message: string) => {
 };
 
 self.onmessage = async (event: MessageEvent<RenderRequest>) => {
-
   const data = event.data;
   if (data.command !== "render") return;
   const {
@@ -75,10 +154,18 @@ self.onmessage = async (event: MessageEvent<RenderRequest>) => {
       fonts,
       mcad,
     });
+
+    const sflibInclusions = detectSFLibsInclusions(part.ownSourceCode);
+
+    console.log("SFLibs: ", sflibInclusions);
+
+    await addSFLibs(instance,sflibInclusions);
+
     sendLog(partName, "OpenSCAD initialized.");
 
     sendLog(partName, "Writing input file...");
     instance.FS.writeFile("/input.scad", part.ownSourceCode);
+
     sendLog(partName, "Input file written.");
 
     sendLog(partName, `Performing render with ${backend} backend...`);
@@ -110,9 +197,9 @@ self.onmessage = async (event: MessageEvent<RenderRequest>) => {
     (self as DedicatedWorkerGlobalScope).postMessage({
       type: "error",
       partName,
-      error: toSerializableObject(err,{
+      error: toSerializableObject(err, {
         enumerableOnly: false,
-      })
+      }),
     } as ErrorMessage);
   }
 };

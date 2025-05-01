@@ -574,7 +574,7 @@ function App() {
       justifyContent="flex-start"
       height="100%"
     >
-      <Div height="100%" flex={1}>
+      <Div height="100%" flex={1.3}>
         <EditorTab agent={editorTabAgent} />
       </Div>
       <Div
@@ -615,7 +615,7 @@ function App() {
           height="100%"
           display="grid"
           gridTemplateRows="1fr"
-          gridTemplateColumns="1.4fr 3fr"
+          gridTemplateColumns="1.3fr 3fr"
         >
           <Div
             background="white"
