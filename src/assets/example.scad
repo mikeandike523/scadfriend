@@ -1,53 +1,10 @@
+// ---- External Libraries ----
+
+use </SFLibs/spline.scad>;
+use </SFLibs/core.scad>;
+
 // ---- HELPER FUNCTIONS AND MODULES ----
 
-function height_at_x_for_circle(r, x) =  sqrt(r*r - x*x);
-
-function normalize3d(v) = 
-    let (len = norm(v))
-    len == 0 ? [0, 0, 0] : [v[0]/len, v[1]/len, v[2]/len];
-
-function normalize2d(v) = 
-    let (len = norm(v))
-    len == 0 ? [0, 0] : [v[0]/len, v[1]/len];
-
-function orthogonal2D(v) = [-v[1], v[0]];
-
-function transformToBasis2D(v, basis0, basis1) =
-    [
-        v[0] * basis0[0] + v[1] * basis1[0],
-        v[0] * basis0[1] + v[1] * basis1[1]
-    ];
-
-function transformPointsToBasis2D(points, basis0, basis1) =
-    [ for (pt = points) transformToBasis2D(pt, basis0, basis1) ];
-
-module rotate_extrude_x(profile_points) {
-    transformed_points = [ for (p = profile_points) [-p[1], p[0] ] ];
-    rotate([0, 90, 0])
-        rotate_extrude($fn=64)
-            polygon(points = transformed_points);
-}
-
-function add2DOffset(points, offset) =
-    [for (p = points) [p[0] + offset[0], p[1] + offset[1]]];
-
-module two_point_box(A, B){
-
-    x_min = min(A[0], B[0]);
-    y_min = min(A[1], B[1]);
-    z_min = min(A[2], B[2]);
-    
-    x_max = max(A[0], B[0]);
-    y_max = max(A[1], B[1]);
-    z_max = max(A[2], B[2]);
-    
-    width = x_max - x_min;
-    depth = y_max - y_min;
-    height = z_max - z_min;
-    
-    translate([x_min, y_min, z_min])
-        cube([width, depth, height]);
-}
 
 // ---- DESIGN SPECIFIC HELPER FUNCTIONS AND MODULES ----
 
@@ -165,15 +122,19 @@ IRIS_SCALE_R=1.05;
 IRIS_SCALE_H=1.0;
 PUPIL_DIAMETER=3;
 
-// As fraction of the outer radius of the
-// opening of the sclear component
-CORNEA_OUTER_PROFILE=[
-    [],
+// x (offset from opening start), y as a fraction of sclera outer diameter at opening
+CORNEA_OUTER_PROFILE_CTRL=[
+    [
 
-
+    ],
 ];
-CORNEA_THICKNESS = 0.75;
 
+// x (offset form opening start), y as a fraction of sclera
+// inner diameter at opening
+CORNEA_INNER_PROFILE_CTRL=[
+];
+
+CORNEA_THICKNESS=0.5;
 
 // ---- DERIVED PARAMETERS ----
 
