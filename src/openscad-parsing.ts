@@ -21,7 +21,8 @@ interface ExportBlock {
  * of the file in which all export blocks are removed except for that one.
  *
  * The export block is determined by:
- * - Starting at a line containing `// @export` (optionally with a name).
+ * - Starting at a line containing `@export` in a comment (whitespace around the
+ *   marker is ignored and an optional name may follow).
  * - Continuing until either a new export marker is found, or after a blank line following
  *   at least one semicolon has been seen, or the file ends.
  *
@@ -45,11 +46,12 @@ export function identifyParts(sourceCode: string): { [name: string]: OpenSCADPar
   }
 
   // --- Step 1. Identify export blocks ---
+  const exportRegex = /^\s*\/\/\s*@export(?:\s+(\S+))?\s*$/;
   for (let i = 0; i < lines.length; i++) {
     const line = lines[i];
-    if (line.includes('// @export')) {
+    if (exportRegex.test(line)) {
       // Extract an optional name from the marker.
-      const exportMatch = line.match(/\/\/\s*@export\s*(\S*)/);
+      const exportMatch = line.match(exportRegex);
       const name = exportMatch && exportMatch[1] ? exportMatch[1] : `Part${exportBlocks.length + 1}`;
 
       // Check for duplicate names among previously discovered blocks.
@@ -65,7 +67,7 @@ export function identifyParts(sourceCode: string): { [name: string]: OpenSCADPar
       for (let j = i + 1; j < lines.length; j++) {
         const currentLine = lines[j];
         // If a new export marker is encountered, end this block before it.
-        if (currentLine.includes('// @export')) {
+        if (exportRegex.test(currentLine)) {
           blockEnd = lineOffsets[j];
           break;
         }
