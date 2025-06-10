@@ -72,6 +72,7 @@ const spinnerAnimation = keyframes`
 
 type PartSettings = {
   visible: boolean;
+  exported: boolean;
 };
 
 function traverseSyncChildrenFirst(
@@ -500,6 +501,22 @@ function App() {
       return;
     }
 
+    // Update part settings with any newly detected parts.
+    for (const [name, part] of Object.entries(detectedParts)) {
+      if (!(name in partSettings)) {
+        partSettings[name] = { visible: true, exported: part.exported };
+      } else {
+        partSettings[name].exported = part.exported;
+      }
+    }
+    // Remove settings for parts that no longer exist.
+    for (const name of Object.keys(partSettings)) {
+      if (!(name in detectedParts)) {
+        delete partSettings[name];
+      }
+    }
+    setPartSettings({ ...partSettings });
+
     clearLogs();
 
     setIsProcessing(true);
@@ -508,7 +525,7 @@ function App() {
 
     log(
       `Found Parts: ${Object.entries(detectedParts)
-        .map(([n, p]) => (p.exported ? n : `${n} (not exported)`))
+        .map(([n, p]) => (p.exported ? n : `${n} (export ignored)`))
         .join(", ")}`
     );
 
@@ -520,16 +537,10 @@ function App() {
         }
         await renderPartInWorker(name, part, backend);
       }
-      for (const partName of Object.keys(completedModelRef.current)) {
-        if (!(partName in partSettings)) {
-          partSettings[partName] = {
-            visible: true,
-          };
-        }
-      }
-      for (const partName of Object.keys(partSettings)) {
-        if (!(partName in completedModelRef.current)) {
-          delete partSettings[partName];
+      // Update visibility state for all detected parts after rendering.
+      for (const [name, part] of Object.entries(detectedParts)) {
+        if (!(name in partSettings)) {
+          partSettings[name] = { visible: true, exported: part.exported };
         }
       }
       setPartSettings({ ...partSettings });
@@ -639,14 +650,15 @@ function App() {
                     flexDirection="row"
                     alignItems="center"
                     gap="0.7em"
+                    key={index}
                   >
                     <Label
                       whiteSpace="nowrap"
-                      key={index}
                       display="flex"
                       flexDirection="row"
                       alignItems="center"
                       gap="0.7em"
+                      color={settings.exported ? undefined : "#666"}
                     >
                       <Input
                         display="flex"
@@ -661,7 +673,7 @@ function App() {
                           setPartSettings({ ...partSettings });
                         }}
                       />
-                      {name}
+                      {settings.exported ? name : `${name} (export ignored)`}
                     </Label>
                     {completedModelRef.current[name] &&
                       completedModelRef.current[name].stl && (
@@ -673,7 +685,7 @@ function App() {
                           justifyContent="center"
                           title="Download STL"
                           borderRadius="50%"
-                          onClick={()=>{
+                          onClick={() => {
                             downloadPart(name);
                           }}
                         >
