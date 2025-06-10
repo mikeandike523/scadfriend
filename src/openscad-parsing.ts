@@ -8,12 +8,17 @@ export type OpenSCADPart = {
    * The color extracted from a color() call in this part’s block (if present).
    */
   color?: string;
+  /**
+   * Whether this part should be exported (i.e. rendered).
+   */
+  exported: boolean;
 };
 
 interface ExportBlock {
   name: string;
   start: number; // character index where the block starts (includes the export marker)
   end: number;   // character index where the block ends
+  exported: boolean; // false if the block was marked with !@export
 }
 
 /**
@@ -27,10 +32,13 @@ interface ExportBlock {
  *   at least one semicolon has been seen, or the file ends.
  *
  * @param sourceCode - The entire OpenSCAD source code.
- * @returns An object mapping each part’s name to its OpenSCADPart.
+ * @returns An object mapping each part's name to its OpenSCADPart. Parts
+ *   marked with `!@export` will have `exported` set to `false`.
  * @throws Error if duplicate part names are detected.
  */
-export function identifyParts(sourceCode: string): { [name: string]: OpenSCADPart } {
+export function identifyParts(sourceCode: string): {
+  [name: string]: OpenSCADPart;
+} {
   // Create a “clean” object (with null prototype) to hold parts.
   const parts: { [name: string]: OpenSCADPart } = Object.create(null);
   const exportBlocks: ExportBlock[] = [];
@@ -46,13 +54,14 @@ export function identifyParts(sourceCode: string): { [name: string]: OpenSCADPar
   }
 
   // --- Step 1. Identify export blocks ---
-  const exportRegex = /^\s*\/\/\s*@export(?:\s+(\S+))?\s*$/;
+  const exportRegex = /^\s*\/\/\s*(!?@export)(?:\s+(\S+))?\s*$/;
   for (let i = 0; i < lines.length; i++) {
     const line = lines[i];
     if (exportRegex.test(line)) {
       // Extract an optional name from the marker.
       const exportMatch = line.match(exportRegex);
-      const name = exportMatch && exportMatch[1] ? exportMatch[1] : `Part${exportBlocks.length + 1}`;
+      const exported = !(exportMatch && exportMatch[1] && exportMatch[1].startsWith('!'));
+      const name = exportMatch && exportMatch[2] ? exportMatch[2] : `Part${exportBlocks.length + 1}`;
 
       // Check for duplicate names among previously discovered blocks.
       if (exportBlocks.some(block => block.name === name)) {
@@ -82,7 +91,7 @@ export function identifyParts(sourceCode: string): { [name: string]: OpenSCADPar
         }
       }
 
-      exportBlocks.push({ name, start: blockStart, end: blockEnd });
+      exportBlocks.push({ name, start: blockStart, end: blockEnd, exported });
     }
   }
 
@@ -120,7 +129,7 @@ export function identifyParts(sourceCode: string): { [name: string]: OpenSCADPar
     }
 
     // Store the part. Note that result is trimmed.
-    parts[block.name] = { ownSourceCode: result.trim() };
+    parts[block.name] = { ownSourceCode: result.trim(), exported: block.exported };
     if (color) {
       parts[block.name].color = color;
     }
