@@ -12,6 +12,7 @@ export interface OpenSCADPart {
   ownSourceCode: string;
   color?: string;
   // ... other properties as needed.
+  exported: boolean;
 }
 
 interface RenderRequest {

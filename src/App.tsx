@@ -506,11 +506,18 @@ function App() {
 
     completedModelRef.current = {};
 
-    log(`Found Parts: ${Object.keys(detectedParts).join(", ")}`);
+    log(
+      `Found Parts: ${Object.entries(detectedParts)
+        .map(([n, p]) => (p.exported ? n : `${n} (not exported)`))
+        .join(", ")}`
+    );
 
     try {
       // Process parts sequentially (you can also do this concurrently if desired).
       for (const [name, part] of Object.entries(detectedParts)) {
+        if (!part.exported) {
+          continue;
+        }
         await renderPartInWorker(name, part, backend);
       }
       for (const partName of Object.keys(completedModelRef.current)) {
