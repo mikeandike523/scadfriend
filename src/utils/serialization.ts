@@ -107,6 +107,8 @@ export function toSerializableObject(
                 "Got an array with an undefined value and `undefinedMode` was set to 'ignore'. This is an edge case that is not allowed, as it is impossible to ignore items inside an array. You can try setting `undefinedMode` to 'preserve' or 'null'."
               );
             }
+          } else {
+            result.push(subResult);
           }
         }
         return result;
