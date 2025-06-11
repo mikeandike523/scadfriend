@@ -6,6 +6,7 @@ import { Button, Div, H1, I, Input, Label, P } from "style-props-html";
 import * as THREE from "three";
 import { OrbitControls } from "three/examples/jsm/controls/OrbitControls.js";
 import { STLLoader } from "three/examples/jsm/loaders/STLLoader.js";
+import throttle from "lodash/throttle.js";
 
 import "@fontsource/fira-code/300.css";
 import "@fontsource/fira-code/400.css";
@@ -185,6 +186,30 @@ function App() {
       ) {
         current.removeChild(threeObjectsRef.current.renderer.domElement);
       }
+    };
+  }, []);
+
+  // Keep the renderer in sync with the viewer div size.
+  useEffect(() => {
+    const threeObjects = threeObjectsRef.current;
+    const viewer = viewerRef.current;
+    if (!threeObjects || !viewer) return;
+
+    const resizeViewport = throttle(() => {
+      const { width, height } = viewer.getBoundingClientRect();
+      threeObjects.renderer.setSize(width, height);
+      threeObjects.camera.aspect = width / height;
+      threeObjects.camera.updateProjectionMatrix();
+    }, 100, { trailing: true });
+
+    window.addEventListener("resize", resizeViewport);
+
+    // Call once in case the initial size is different.
+    resizeViewport();
+
+    return () => {
+      window.removeEventListener("resize", resizeViewport);
+      resizeViewport.cancel();
     };
   }, []);
 
