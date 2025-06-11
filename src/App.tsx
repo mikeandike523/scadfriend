@@ -27,6 +27,11 @@ import { identifyParts, OpenSCADPart } from "./openscad-parsing";
 import { createLabeledAxis } from "./AxisVisualizer";
 import useFSAUnsupported from "./hooks/useFSAUnsupported";
 import { formatError } from "./utils/serialization";
+import {
+  PanelGroup,
+  Panel,
+  PanelResizeHandle,
+} from "react-resizable-panels";
 
 const MAX_MESSAGES = 200;
 
@@ -610,23 +615,26 @@ function App() {
     URL.revokeObjectURL(url);
   };
   return (
-    <Div
-      display="flex"
-      flexDirection="row"
-      alignItems="flex-start"
-      justifyContent="flex-start"
-      height="100%"
-    >
-      <Div height="100%" flex={1.3}>
-        <EditorTab agent={editorTabAgent} />
-      </Div>
-      <Div
-        height="100%"
-        flex={1}
-        display="grid"
-        gridTemplateRows="auto 1.5fr 1fr"
-        gridTemplateColumns="1fr"
+    <>
+      <PanelGroup
+        direction="horizontal"
+        style={{ width: "100%", height: "100%" }}
       >
+        <Panel
+          defaultSize={35}
+          minSize={20}
+          onResize={editorTabAgent.layoutEditor}
+        >
+          <EditorTab agent={editorTabAgent} />
+        </Panel>
+        <PanelResizeHandle />
+        <Panel>
+          <Div
+            height="100%"
+            display="grid"
+            gridTemplateRows="auto 1.5fr 1fr"
+            gridTemplateColumns="1fr"
+          >
         {/* Render Controls */}
         <Div display="flex" flexDirection="row" gap="8px" padding="8px">
           <Button
@@ -816,7 +824,9 @@ function App() {
         >
           {messages.join("\n") + "\n"}
         </Div>
-      </Div>
+        </Div>
+      </Panel>
+      </PanelGroup>
       <Div
         position="fixed"
         width="100vw"
@@ -843,7 +853,7 @@ function App() {
           <P textAlign="center">Please switch to a browser from after 2016.</P>
         </Div>
       </Div>
-    </Div>
+    </>
   );
 }
 

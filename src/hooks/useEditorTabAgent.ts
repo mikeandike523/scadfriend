@@ -53,6 +53,8 @@ export interface EditorTabAgent {
   openExistingFile: () => Promise<void>;
   saveCurrentFile: () => Promise<void>;
   closeFile: () => Promise<void>;
+  /** Force the Monaco editor to relayout */
+  layoutEditor: () => void;
 }
 
 const isMac = () => {
@@ -181,6 +183,12 @@ export default function useEditorTabAgent({
     await deleteStoredFileHandle();
   };
 
+  const layoutEditor = useCallback(() => {
+    if (editorRef.current) {
+      editorRef.current.layout();
+    }
+  }, []);
+
   const onCtrlS = useCallback(() => {
     const canSave= editorLoaded && dirty && (fileIsLoaded || isNewFile)
     if(canSave) {
@@ -230,5 +238,6 @@ export default function useEditorTabAgent({
     openExistingFile,
     saveCurrentFile,
     closeFile,
+    layoutEditor,
   };
 }
