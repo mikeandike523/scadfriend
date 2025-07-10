@@ -16,10 +16,11 @@ import "@fontsource/fira-code/index.css";
 
 export interface EditorTabProps extends DivProps {
   agent: EditorTabAgent;
+  widthPx?: number;
 }
 
 export default forwardRef<HTMLDivElement, EditorTabProps>(function EditorTab(
-  { agent, ...rest },
+  { agent, widthPx, ...rest },
   ref
 ) {
   const showNoneSelectedDialog = !agent.fileIsLoaded && !agent.isNewFile;
@@ -27,7 +28,7 @@ export default forwardRef<HTMLDivElement, EditorTabProps>(function EditorTab(
   return (
     <Div
       ref={ref}
-      width="100%"
+      width={widthPx ? `${widthPx}px` : "100%"}
       display="grid"
       gridTemplateRows="auto 1fr"
       gridTemplateColumns="1fr"
@@ -89,7 +90,7 @@ export default forwardRef<HTMLDivElement, EditorTabProps>(function EditorTab(
         )}
       </Div>
 
-      <Div width="100%" height="100%" position="relative">
+      <Div width={widthPx ? `${widthPx}px` : "100%"} height="100%" position="relative">
         <Editor
           onMount={(editor) => {
             agent.storeEditor(editor);
