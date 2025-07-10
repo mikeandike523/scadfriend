@@ -167,6 +167,10 @@ self.onmessage = async (event: MessageEvent<RenderRequest>) => {
     sendLog(partName, "Writing input file...");
     instance.FS.writeFile("/input.scad", part.ownSourceCode);
 
+    console.log(part.ownSourceCode.split('\n').map((l,i)=>{
+      return `${i+1}. ${l}`
+    }).join('\n'))
+
     sendLog(partName, "Input file written.");
 
     sendLog(partName, `Performing render with ${backend} backend...`);
