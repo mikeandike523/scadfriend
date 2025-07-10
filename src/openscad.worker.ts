@@ -1,6 +1,7 @@
 import { type FS } from "./openscad";
 import oscadUtil from "./oscadUtil";
 import { type OpenSCAD } from "./openscad";
+import { formatWithLineNumbers } from "./utils/formatting";
 
 import {
   SerializableObject,
@@ -100,7 +101,6 @@ async function addSFLibs(instance: OpenSCAD, paths: string[]) {
     alreadyCreatedFolders.add(path);
     if (segments.length === 1) {
       const code = await grabSFLibFile(path);
-      console.log(code)
       fs.writeFile("/SFLibs/" + path, code);
     } else {
       const priorFolders: string[] = [];
@@ -158,8 +158,6 @@ self.onmessage = async (event: MessageEvent<RenderRequest>) => {
 
     const sflibInclusions = detectSFLibsInclusions(part.ownSourceCode);
 
-    console.log("SFLibs: ", sflibInclusions);
-
     await addSFLibs(instance,sflibInclusions);
 
     sendLog(partName, "OpenSCAD initialized.");
@@ -167,9 +165,7 @@ self.onmessage = async (event: MessageEvent<RenderRequest>) => {
     sendLog(partName, "Writing input file...");
     instance.FS.writeFile("/input.scad", part.ownSourceCode);
 
-    console.log(part.ownSourceCode.split('\n').map((l,i)=>{
-      return `${i+1}. ${l}`
-    }).join('\n'))
+    console.log(formatWithLineNumbers(part.ownSourceCode));
 
     sendLog(partName, "Input file written.");
 
