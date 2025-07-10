@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { css, keyframes } from "@emotion/react";
 import Color from "color";
 import throttle from "lodash/throttle.js";
@@ -87,6 +87,10 @@ export default function App() {
   const [partSettings, setPartSettings] = useState<Record<string, PartSettings>>({});
 
   const editorTabAgent = useEditorTabAgent({ code, setCode });
+  const layoutEditorThrottled = useMemo(
+    () => throttle(() => editorTabAgent.layoutEditor(), 100, { trailing: true }),
+    [editorTabAgent]
+  );
   const orbitControlsRef = useRef<OrbitControls | null>(null);
   const threeObjectsRef = useRef<{
     scene: THREE.Scene;
@@ -148,6 +152,15 @@ export default function App() {
       }
     };
   }, []);
+
+  useEffect(() => {
+    window.addEventListener("resize", layoutEditorThrottled);
+    layoutEditorThrottled();
+    return () => {
+      window.removeEventListener("resize", layoutEditorThrottled);
+      layoutEditorThrottled.cancel();
+    };
+  }, [layoutEditorThrottled]);
 
   useEffect(() => {
     const three = threeObjectsRef.current;
@@ -324,7 +337,7 @@ export default function App() {
     <>
       <div style={{width:"100vw",height:"100vh",overflow:"hidden"}}>
         {/* @ts-expect-error There seems to be a typing bug in splitplane library where `children` property is not present */}
-        <SplitPane split="vertical" minSize={200} defaultSize="35%" onChange={()=>editorTabAgent.layoutEditor()}>
+        <SplitPane split="vertical" minSize={200} defaultSize="35%" onChange={layoutEditorThrottled}>
           <div style={{height:"100%",overflow:"auto",background:"#f5f5f5",padding:"8px"}}>
             <EditorTab agent={editorTabAgent}/>
           </div>
