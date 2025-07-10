@@ -323,6 +323,7 @@ export default function App() {
   return (
     <>
       <div style={{width:"100vw",height:"100vh",overflow:"hidden"}}>
+        {/* @ts-expect-error There seems to be a typing bug in splitplane library where `children` property is not present */}
         <SplitPane split="vertical" minSize={200} defaultSize="35%" onChange={()=>editorTabAgent.layoutEditor()}>
           <div style={{height:"100%",overflow:"auto",background:"#f5f5f5",padding:"8px"}}>
             <EditorTab agent={editorTabAgent}/>

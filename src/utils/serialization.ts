@@ -108,7 +108,7 @@ export function toSerializableObject(
               );
             }
           } else {
-            result.push(subResult);
+            result.push(subResult as unknown as typeof result[number]);
           }
         }
         return result;
