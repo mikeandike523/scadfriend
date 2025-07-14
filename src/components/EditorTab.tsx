@@ -1,6 +1,6 @@
 import { css } from "@emotion/react";
 import { Editor } from "@monaco-editor/react";
-import { forwardRef, RefObject, useEffect, useState } from "react";
+import { forwardRef } from "react";
 import { Aside, Br, Button, Div, DivProps, H1, Span } from "style-props-html";
 import { EditorTabAgent } from "../hooks/useEditorTabAgent";
 import { useRegisterOpenSCADLanguage } from "../openscad-lang";
@@ -23,18 +23,6 @@ export default forwardRef<HTMLDivElement, EditorTabProps>(function EditorTab(
 ) {
   const showNoneSelectedDialog = !agent.fileIsLoaded && !agent.isNewFile;
   useRegisterOpenSCADLanguage();
-  const [widthPx, setWidthPx] = useState<number | null>(null);
-  useEffect(() => {
-    setInterval(() => {
-      const storedValue = sessionStorage.getItem("editorWidth");
-      if (storedValue !== null) {
-        const newValue = Number(storedValue);
-        if (newValue !== widthPx) {
-          setWidthPx(newValue);
-        }
-      }
-    }, 100);
-  }, [widthPx]);
 
   return (
     <Div
@@ -101,11 +89,7 @@ export default forwardRef<HTMLDivElement, EditorTabProps>(function EditorTab(
         )}
       </Div>
 
-      <Div
-        width={widthPx ? `${widthPx}px` : "100%"}
-        height="100%"
-        position="relative"
-      >
+      <Div width="100%" height="100%" position="relative">
         <Editor
           onMount={(editor) => {
             agent.storeEditor(editor);

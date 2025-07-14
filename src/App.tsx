@@ -1,11 +1,10 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { css, keyframes } from "@emotion/react";
 import Color from "color";
-import { throttle, debounce } from "lodash";
+import { throttle } from "lodash";
 import * as THREE from "three";
 import { OrbitControls } from "three/examples/jsm/controls/OrbitControls.js";
 import { STLLoader } from "three/examples/jsm/loaders/STLLoader.js";
-import SplitPane from "react-split-pane";
 
 import "@fontsource/fira-code/300.css";
 import "@fontsource/fira-code/400.css";
@@ -103,15 +102,43 @@ export default function App() {
   //   }, 100);
   // }, []);
 
-  const onEditorWidthChange = useCallback(() => {
-          if (viewerContainerRef.current) {
-        sessionStorage.setItem(
-          "editorWidth",(window.innerWidth - 
-          viewerContainerRef.current.getBoundingClientRect().width).toString()
-        );
-      }
-  },[])
+  // Split pane width is managed manually
+  const resizingRef = useRef(false);
+  const [editorWidth, setEditorWidth] = useState(300);
 
+  useEffect(() => {
+    const stored = sessionStorage.getItem("editorWidth");
+    if (stored) setEditorWidth(parseInt(stored));
+    else setEditorWidth(Math.floor(window.innerWidth * 0.5));
+  }, []);
+
+  useEffect(() => {
+    sessionStorage.setItem("editorWidth", editorWidth.toString());
+    editorTabAgent.layoutEditor();
+  }, [editorWidth, editorTabAgent]);
+
+  useEffect(() => {
+    const onMove = (e: MouseEvent) => {
+      if (!resizingRef.current) return;
+      const min = 100;
+      const max = window.innerWidth - 100;
+      const newWidth = Math.min(max, Math.max(min, e.clientX));
+      setEditorWidth(newWidth);
+    };
+    const stop = () => {
+      resizingRef.current = false;
+    };
+    window.addEventListener("mousemove", onMove);
+    window.addEventListener("mouseup", stop);
+    return () => {
+      window.removeEventListener("mousemove", onMove);
+      window.removeEventListener("mouseup", stop);
+    };
+  }, []);
+
+  const startResizing = useCallback(() => {
+    resizingRef.current = true;
+  }, []);
 
   const orbitControlsRef = useRef<OrbitControls | null>(null);
   const threeObjectsRef = useRef<{
@@ -175,14 +202,6 @@ export default function App() {
     };
   }, []);
 
-  const [storedEditorSize, setStoredEditorSize] = useState<number | null>(null);
-
-  useEffect(() => {
-    if (sessionStorage.getItem("editorWidth")) {
-      const newValue = parseInt(sessionStorage.getItem("editorWidth")!);
-      setStoredEditorSize(newValue);
-    }
-  });
 
   useEffect(() => {
     const three = threeObjectsRef.current;
@@ -331,7 +350,9 @@ export default function App() {
         mesh.name = name;
         mesh.castShadow = mesh.receiveShadow = true;
         partsGroup.add(mesh);
-      } catch {}
+      } catch {
+        // ignored
+      }
     });
     if (!renderedAtLeastOnce) goToDefaultView();
   };
@@ -425,42 +446,34 @@ export default function App() {
     document.body.removeChild(a);
   };
 
-  console.log(storedEditorSize ?? undefined);
   return (
     <>
-      <div style={{ width: "100vw", height: "100vh", overflow: "hidden" }}>
-        {/* @ts-expect-error There seems to be a typing bug in splitplane library where `children` property is not present */}
-        <SplitPane
-          split="vertical"
+      <div style={{ width: "100vw", height: "100vh", overflow: "hidden", display: "flex" }}>
+        <div
+          ref={editorContainerRef}
           style={{
-            width: "100%",
+            height: "100%",
+            overflow: "auto",
+            background: "#f5f5f5",
+            padding: "8px",
+            width: `${editorWidth}px`,
           }}
-          onChange={onEditorWidthChange}
-          defaultSize={storedEditorSize??undefined}
-
         >
-          <div
-            ref={editorContainerRef}
-            style={{
-              height: "100%",
-              overflow: "auto",
-              background: "#f5f5f5",
-              padding: "8px",
-              width: storedEditorSize ? storedEditorSize : "50%",
-            }}
-          >
-            <EditorTab agent={editorTabAgent} />
-          </div>
-          <div
-            ref={viewerContainerRef}
-            style={{
-              height: "100%",
-              display: "grid",
-              gridTemplateRows: "auto 1.5fr 1fr",
-              width: `calc(100vw - ${storedEditorSize ? storedEditorSize : "50%"})`,
-
-            }}
-          >
+          <EditorTab agent={editorTabAgent} />
+        </div>
+        <div
+          style={{ width: "4px", cursor: "col-resize", background: "#ccc" }}
+          onMouseDown={startResizing}
+        />
+        <div
+          ref={viewerContainerRef}
+          style={{
+            height: "100%",
+            flex: 1,
+            display: "grid",
+            gridTemplateRows: "auto 1.5fr 1fr",
+          }}
+        >
             <Div display="flex" gap="8px" padding="8px">
               <Button
                 disabled={isProcessing}
@@ -600,7 +613,6 @@ export default function App() {
               {messages.join("\n") + "\n"}
             </Div>
           </div>
-        </SplitPane>
         <Div
           position="fixed"
           width="100vw"
