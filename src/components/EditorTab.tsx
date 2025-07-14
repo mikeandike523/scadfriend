@@ -1,6 +1,6 @@
 import { css } from "@emotion/react";
 import { Editor } from "@monaco-editor/react";
-import { forwardRef } from "react";
+import { forwardRef, RefObject, useEffect, useState } from "react";
 import { Aside, Br, Button, Div, DivProps, H1, Span } from "style-props-html";
 import { EditorTabAgent } from "../hooks/useEditorTabAgent";
 import { useRegisterOpenSCADLanguage } from "../openscad-lang";
@@ -16,19 +16,30 @@ import "@fontsource/fira-code/index.css";
 
 export interface EditorTabProps extends DivProps {
   agent: EditorTabAgent;
-  widthPx?: number;
 }
-
 export default forwardRef<HTMLDivElement, EditorTabProps>(function EditorTab(
-  { agent, widthPx, ...rest },
+  { agent, ...rest },
   ref
 ) {
   const showNoneSelectedDialog = !agent.fileIsLoaded && !agent.isNewFile;
   useRegisterOpenSCADLanguage();
+  const [widthPx, setWidthPx] = useState<number | null>(null);
+  useEffect(() => {
+    setInterval(() => {
+      const storedValue = sessionStorage.getItem("editorWidth");
+      if (storedValue !== null) {
+        const newValue = Number(storedValue);
+        if (newValue !== widthPx) {
+          setWidthPx(newValue);
+        }
+      }
+    }, 100);
+  }, [widthPx]);
+
   return (
     <Div
       ref={ref}
-      width={widthPx ? `${widthPx}px` : "100%"}
+      width={"100%"}
       display="grid"
       gridTemplateRows="auto 1fr"
       gridTemplateColumns="1fr"
@@ -90,7 +101,11 @@ export default forwardRef<HTMLDivElement, EditorTabProps>(function EditorTab(
         )}
       </Div>
 
-      <Div width={widthPx ? `${widthPx}px` : "100%"} height="100%" position="relative">
+      <Div
+        width={widthPx ? `${widthPx}px` : "100%"}
+        height="100%"
+        position="relative"
+      >
         <Editor
           onMount={(editor) => {
             agent.storeEditor(editor);

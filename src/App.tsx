@@ -1,11 +1,11 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { css, keyframes } from "@emotion/react";
 import Color from "color";
-import throttle from "lodash/throttle.js";
+import { throttle, debounce } from "lodash";
 import * as THREE from "three";
 import { OrbitControls } from "three/examples/jsm/controls/OrbitControls.js";
 import { STLLoader } from "three/examples/jsm/loaders/STLLoader.js";
-import SplitPane from 'react-split-pane';
+import SplitPane from "react-split-pane";
 
 import "@fontsource/fira-code/300.css";
 import "@fontsource/fira-code/400.css";
@@ -84,25 +84,35 @@ export default function App() {
   const [isProcessing, setIsProcessing] = useState(false);
   const [renderedAtLeastOnce, setRenderedAtLeastOnce] = useState(false);
   const completedModelRef = useRef<Record<string, OpenSCADPartWithSTL>>({});
-  const [partSettings, setPartSettings] = useState<Record<string, PartSettings>>({});
+  const [partSettings, setPartSettings] = useState<
+    Record<string, PartSettings>
+  >({});
 
   const editorTabAgent = useEditorTabAgent({ code, setCode });
   const editorContainerRef = useRef<HTMLDivElement>(null);
-  const [editorWidth, setEditorWidth] = useState(0);
-  const layoutEditorThrottled = useMemo(
-    () => throttle(() => editorTabAgent.layoutEditor(), 100, { trailing: true }),
-    [editorTabAgent]
-  );
-  const updateEditorSize = useMemo(
-    () =>
-      throttle(() => {
-        if (editorContainerRef.current) {
-          setEditorWidth(editorContainerRef.current.getBoundingClientRect().width);
-        }
-        layoutEditorThrottled();
-      }, 100, { trailing: true }),
-    [layoutEditorThrottled]
-  );
+  const viewerContainerRef = useRef<HTMLDivElement>(null);
+
+  // useEffect(() => {
+  //   setInterval(() => {
+  //     if (viewerContainerRef.current) {
+  //       sessionStorage.setItem(
+  //         "editorWidth",(window.innerWidth - 
+  //         viewerContainerRef.current.getBoundingClientRect().width).toString()
+  //       );
+  //     }
+  //   }, 100);
+  // }, []);
+
+  const onEditorWidthChange = useCallback(() => {
+          if (viewerContainerRef.current) {
+        sessionStorage.setItem(
+          "editorWidth",(window.innerWidth - 
+          viewerContainerRef.current.getBoundingClientRect().width).toString()
+        );
+      }
+  },[])
+
+
   const orbitControlsRef = useRef<OrbitControls | null>(null);
   const threeObjectsRef = useRef<{
     scene: THREE.Scene;
@@ -165,26 +175,30 @@ export default function App() {
     };
   }, []);
 
+  const [storedEditorSize, setStoredEditorSize] = useState<number | null>(null);
+
   useEffect(() => {
-    window.addEventListener("resize", updateEditorSize);
-    updateEditorSize();
-    return () => {
-      window.removeEventListener("resize", updateEditorSize);
-      updateEditorSize.cancel();
-    };
-  }, [updateEditorSize]);
+    if (sessionStorage.getItem("editorWidth")) {
+      const newValue = parseInt(sessionStorage.getItem("editorWidth")!);
+      setStoredEditorSize(newValue);
+    }
+  });
 
   useEffect(() => {
     const three = threeObjectsRef.current;
     const container = viewerRef.current;
     if (!three || !container) return;
 
-    const onResize = throttle(() => {
-      const { width, height } = container.getBoundingClientRect();
-      three.renderer.setSize(width, height);
-      three.camera.aspect = width / height;
-      three.camera.updateProjectionMatrix();
-    }, 100, { trailing: true });
+    const onResize = throttle(
+      () => {
+        const { width, height } = container.getBoundingClientRect();
+        three.renderer.setSize(width, height);
+        three.camera.aspect = width / height;
+        three.camera.updateProjectionMatrix();
+      },
+      100,
+      { trailing: true }
+    );
 
     window.addEventListener("resize", onResize);
     onResize();
@@ -232,7 +246,13 @@ export default function App() {
       { dir: new THREE.Vector3(0, 0, 1), color: 0x00ffff, label: "-Y" },
       { dir: new THREE.Vector3(0, -1, 0), color: 0xff00ff, label: "-Z" },
     ].forEach(({ dir, color, label }) =>
-      addAxis(dir, new THREE.Color(color), new THREE.Color(0x000000), label, new THREE.Vector3(0, 5, 0))
+      addAxis(
+        dir,
+        new THREE.Color(color),
+        new THREE.Color(0x000000),
+        label,
+        new THREE.Vector3(0, 5, 0)
+      )
     );
 
     axesAdded.current = true;
@@ -253,28 +273,39 @@ export default function App() {
       const three = threeObjectsRef.current!;
       three.renderer.render(three.scene, three.camera);
       three.directionalLight.position.copy(three.camera.position);
-      three.directionalLight.target.position.copy(orbitControlsRef.current!.target);
+      three.directionalLight.target.position.copy(
+        orbitControlsRef.current!.target
+      );
       three.directionalLight.target.updateMatrixWorld();
     };
     animate();
   }, []);
 
   useEffect(() => {
-    consoleDivRef.current?.scrollTo({ top: consoleDivRef.current.scrollHeight, behavior: "smooth" });
+    consoleDivRef.current?.scrollTo({
+      top: consoleDivRef.current.scrollHeight,
+      behavior: "smooth",
+    });
   }, [messages]);
 
   const goToDefaultView = () => {
     const three = threeObjectsRef.current!;
     const bbox = new THREE.Box3();
     traverseSyncChildrenFirst(three.scene, (node) => {
-      if (node instanceof THREE.Mesh && !node.userData.keep) bbox.expandByObject(node);
+      if (node instanceof THREE.Mesh && !node.userData.keep)
+        bbox.expandByObject(node);
     });
     if (!bbox.isEmpty()) {
-      const center = new THREE.Vector3(); bbox.getCenter(center);
-      const size = new THREE.Vector3(); bbox.getSize(size);
+      const center = new THREE.Vector3();
+      bbox.getCenter(center);
+      const size = new THREE.Vector3();
+      bbox.getSize(size);
       const maxDim = Math.max(size.x, size.y, size.z);
-      const dist = maxDim / (2 * Math.tan((three.camera.fov * Math.PI) / 360)) * 1.5;
-      const offset = new THREE.Vector3(1, 1, 1).normalize().multiplyScalar(dist);
+      const dist =
+        (maxDim / (2 * Math.tan((three.camera.fov * Math.PI) / 360))) * 1.5;
+      const offset = new THREE.Vector3(1, 1, 1)
+        .normalize()
+        .multiplyScalar(dist);
       three.camera.position.copy(center).add(offset);
       three.camera.lookAt(center);
       orbitControlsRef.current!.target.copy(center);
@@ -289,13 +320,18 @@ export default function App() {
     Object.entries(completedModelRef.current).forEach(([name, part]) => {
       if (!part.stl) return;
       try {
-        const geom = loader.parse(copySharedBufferToArrayBuffer(part.stl.buffer));
+        const geom = loader.parse(
+          copySharedBufferToArrayBuffer(part.stl.buffer)
+        );
         geom.rotateX(-Math.PI / 2);
-        const mat = new THREE.MeshPhongMaterial({ color: getColorOrDefault(part.color) });
+        const mat = new THREE.MeshPhongMaterial({
+          color: getColorOrDefault(part.color),
+        });
         const mesh = new THREE.Mesh(geom, mat);
-        mesh.name = name; mesh.castShadow = mesh.receiveShadow = true;
+        mesh.name = name;
+        mesh.castShadow = mesh.receiveShadow = true;
         partsGroup.add(mesh);
-      } catch {};
+      } catch {}
     });
     if (!renderedAtLeastOnce) goToDefaultView();
   };
@@ -310,95 +346,284 @@ export default function App() {
 
   useEffect(updateVisibility, [updateVisibility]);
 
-  const log = (msg: string) => setMessages((m) => [...m, msg].slice(-MAX_MESSAGES));
+  const log = (msg: string) =>
+    setMessages((m) => [...m, msg].slice(-MAX_MESSAGES));
   const clearLogs = () => setMessages([]);
 
-  const renderPartInWorker = (name: string, part: OpenSCADPart, backend: "Manifold" | "CGAL") =>
+  const renderPartInWorker = (
+    name: string,
+    part: OpenSCADPart,
+    backend: "Manifold" | "CGAL"
+  ) =>
     new Promise<void>((resolve, reject) => {
-      const w = new Worker(new URL("./openscad.worker.ts", import.meta.url), { type: "module" });
+      const w = new Worker(new URL("./openscad.worker.ts", import.meta.url), {
+        type: "module",
+      });
       w.onmessage = (e) => {
         if (e.data.type === "log") log(`[${name}] ${e.data.message}`);
-        else if (e.data.type === "result") { completedModelRef.current[name] = {...part, stl: e.data.stl}; log(`Rendered "${name}"`); w.terminate(); resolve(); }
-        else if (e.data.type === "error") { log(`Error: ${formatError(e.data.error)}`); w.terminate(); reject(e.data.error); }
+        else if (e.data.type === "result") {
+          completedModelRef.current[name] = { ...part, stl: e.data.stl };
+          log(`Rendered "${name}"`);
+          w.terminate();
+          resolve();
+        } else if (e.data.type === "error") {
+          log(`Error: ${formatError(e.data.error)}`);
+          w.terminate();
+          reject(e.data.error);
+        }
       };
-      w.onerror = (err) => { log(`Worker error: ${err.message}`); w.terminate(); reject(err); };
+      w.onerror = (err) => {
+        log(`Worker error: ${err.message}`);
+        w.terminate();
+        reject(err);
+      };
       w.postMessage({ command: "render", partName: name, part, backend });
     });
 
   const renderModel = async (backend: "Manifold" | "CGAL") => {
     if (isProcessing) return log("Already processing");
-    const parts = identifyParts(code); if (!Object.keys(parts).length) return alert('No parts exported. Use "// @export".');
-    Object.entries(parts).forEach(([n,p]) => { 
-      if (!(n in partSettings)) partSettings[n] = { visible:true, exported:p.exported }; 
+    const parts = identifyParts(code);
+    if (!Object.keys(parts).length)
+      return alert('No parts exported. Use "// @export".');
+    Object.entries(parts).forEach(([n, p]) => {
+      if (!(n in partSettings))
+        partSettings[n] = { visible: true, exported: p.exported };
       else partSettings[n].exported = p.exported;
     });
-    Object.keys(partSettings).forEach(n => { if (!(n in parts)) delete partSettings[n]; });
-    setPartSettings({...partSettings}); clearLogs(); setIsProcessing(true); completedModelRef.current = {};
+    Object.keys(partSettings).forEach((n) => {
+      if (!(n in parts)) delete partSettings[n];
+    });
+    setPartSettings({ ...partSettings });
+    clearLogs();
+    setIsProcessing(true);
+    completedModelRef.current = {};
     log(`Found parts: ${Object.keys(parts).join(", ")}`);
-    try { for (const [n,p] of Object.entries(parts)) if (p.exported) await renderPartInWorker(n,p,backend); setRenderedAtLeastOnce(true); log("Done"); updateThreeScene(); setPartSettings({...partSettings}); }
-    catch(err){ alert("Rendering failed"); log(`Fail: ${formatError(err)}`); }
-    finally { setIsProcessing(false);}  
+    try {
+      for (const [n, p] of Object.entries(parts))
+        if (p.exported) await renderPartInWorker(n, p, backend);
+      setRenderedAtLeastOnce(true);
+      log("Done");
+      updateThreeScene();
+      setPartSettings({ ...partSettings });
+    } catch (err) {
+      alert("Rendering failed");
+      log(`Fail: ${formatError(err)}`);
+    } finally {
+      setIsProcessing(false);
+    }
   };
 
   const downloadPart = (name: string) => {
-    const part = completedModelRef.current[name]; if (!part?.stl) return alert(`${name} missing`);
-    const url=URL.createObjectURL(new Blob([part.stl])); const a=document.createElement("a"); a.href=url; a.download=`${name}.stl`; document.body.appendChild(a); a.click(); document.body.removeChild(a);
+    const part = completedModelRef.current[name];
+    if (!part?.stl) return alert(`${name} missing`);
+    const url = URL.createObjectURL(new Blob([part.stl]));
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = `${name}.stl`;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
   };
 
+  console.log(storedEditorSize ?? undefined);
   return (
     <>
-      <div style={{width:"100vw",height:"100vh",overflow:"hidden"}}>
+      <div style={{ width: "100vw", height: "100vh", overflow: "hidden" }}>
         {/* @ts-expect-error There seems to be a typing bug in splitplane library where `children` property is not present */}
-        <SplitPane split="vertical" minSize={200} defaultSize="35%" onChange={updateEditorSize}>
-          <div ref={editorContainerRef} style={{height:"100%",overflow:"auto",background:"#f5f5f5",padding:"8px"}}>
-            <EditorTab agent={editorTabAgent} widthPx={editorWidth}/>
+        <SplitPane
+          split="vertical"
+          style={{
+            width: "100%",
+          }}
+          onChange={onEditorWidthChange}
+          defaultSize={storedEditorSize??undefined}
+
+        >
+          <div
+            ref={editorContainerRef}
+            style={{
+              height: "100%",
+              overflow: "auto",
+              background: "#f5f5f5",
+              padding: "8px",
+              width: storedEditorSize ? storedEditorSize : "50%",
+            }}
+          >
+            <EditorTab agent={editorTabAgent} />
           </div>
-          <div style={{height:"100%",display:"grid",gridTemplateRows:"auto 1.5fr 1fr"}}>
+          <div
+            ref={viewerContainerRef}
+            style={{
+              height: "100%",
+              display: "grid",
+              gridTemplateRows: "auto 1.5fr 1fr",
+              width: `calc(100vw - ${storedEditorSize ? storedEditorSize : "50%"})`,
+
+            }}
+          >
             <Div display="flex" gap="8px" padding="8px">
-              <Button disabled={isProcessing}
-                flex={1} fontSize="150%" onClick={()=>renderModel("Manifold")}>Preview</Button>
-              <Button disabled={isProcessing}
-                flex={1} fontSize="150%" onClick={()=>renderModel("CGAL")}>Render</Button>
+              <Button
+                disabled={isProcessing}
+                flex={1}
+                fontSize="150%"
+                onClick={() => renderModel("Manifold")}
+              >
+                Preview
+              </Button>
+              <Button
+                disabled={isProcessing}
+                flex={1}
+                fontSize="150%"
+                onClick={() => renderModel("CGAL")}
+              >
+                Render
+              </Button>
             </Div>
             <Div display="grid" gridTemplateColumns="1.3fr 3fr" height="100%">
-              <Div background="white" padding="8px" display="flex" flexDirection="column" gap="8px">
-                {Object.keys(partSettings).length? Object.entries(partSettings).map(([name,s],i)=>(
-                  <Div key={i} display="flex" alignItems="center" gap="0.7em">
-                    <Label display="flex" alignItems="center" gap="0.7em" color={!s.exported?"#666":undefined}>
-                      <Input type="checkbox" checked={s.visible} onChange={()=>{s.visible=!s.visible;setPartSettings({...partSettings});}}/>
-                      {s.exported?name:`${name}(ignored)`}
-                    </Label>
-                    {completedModelRef.current[name]?.stl&&(
-                      <Button width="1.25rem"height="1.25rem" onClick={()=>downloadPart(name)}>
-                        <FaFileDownload style={{fontSize:"0.75rem"}}/></Button>)}
-                  </Div>)):
-                  <I>No parts yet.</I>}
+              <Div
+                background="white"
+                padding="8px"
+                display="flex"
+                flexDirection="column"
+                gap="8px"
+              >
+                {Object.keys(partSettings).length ? (
+                  Object.entries(partSettings).map(([name, s], i) => (
+                    <Div key={i} display="flex" alignItems="center" gap="0.7em">
+                      <Label
+                        display="flex"
+                        alignItems="center"
+                        gap="0.7em"
+                        color={!s.exported ? "#666" : undefined}
+                      >
+                        <Input
+                          type="checkbox"
+                          checked={s.visible}
+                          onChange={() => {
+                            s.visible = !s.visible;
+                            setPartSettings({ ...partSettings });
+                          }}
+                        />
+                        {s.exported ? name : `${name}(ignored)`}
+                      </Label>
+                      {completedModelRef.current[name]?.stl && (
+                        <Button
+                          width="1.25rem"
+                          height="1.25rem"
+                          onClick={() => downloadPart(name)}
+                        >
+                          <FaFileDownload style={{ fontSize: "0.75rem" }} />
+                        </Button>
+                      )}
+                    </Div>
+                  ))
+                ) : (
+                  <I>No parts yet.</I>
+                )}
               </Div>
               <Div background="#aaa" position="relative" height="100%">
-                <Div ref={viewerRef} width="100%" height="100%"/>
-                <Div position="absolute" top={0}left={0}right={0}bottom={0}display="flex"alignItems="center"justifyContent="center"pointerEvents={isProcessing?"auto":"none"}opacity={isProcessing?1:0} transition="opacity .5s">
-                  <Div width="48px"height="48px"css={css`border-radius:50%;border:4px solid blue;border-top:4px solid transparent;animation:${spinnerAnimation} 2s linear infinite;`}/>
+                <Div ref={viewerRef} width="100%" height="100%" />
+                <Div
+                  position="absolute"
+                  top={0}
+                  left={0}
+                  right={0}
+                  bottom={0}
+                  display="flex"
+                  alignItems="center"
+                  justifyContent="center"
+                  pointerEvents={isProcessing ? "auto" : "none"}
+                  opacity={isProcessing ? 1 : 0}
+                  transition="opacity .5s"
+                >
+                  <Div
+                    width="48px"
+                    height="48px"
+                    css={css`
+                      border-radius: 50%;
+                      border: 4px solid blue;
+                      border-top: 4px solid transparent;
+                      animation: ${spinnerAnimation} 2s linear infinite;
+                    `}
+                  />
                 </Div>
-                <Div position="absolute" top={0}left={0}right={0}bottom={0}display="flex"flexDirection="column"alignItems="center"justifyContent="center"pointerEvents={renderedAtLeastOnce||isProcessing?"none":"auto"}opacity={renderedAtLeastOnce||isProcessing?0:1}transition="opacity .5s">
-                  <H1 color="darkblue" textAlign="center">Nothing to show.</H1>
-                  <H1 color="darkblue" textAlign="center">Press "Render" to start.</H1>
+                <Div
+                  position="absolute"
+                  top={0}
+                  left={0}
+                  right={0}
+                  bottom={0}
+                  display="flex"
+                  flexDirection="column"
+                  alignItems="center"
+                  justifyContent="center"
+                  pointerEvents={
+                    renderedAtLeastOnce || isProcessing ? "none" : "auto"
+                  }
+                  opacity={renderedAtLeastOnce || isProcessing ? 0 : 1}
+                  transition="opacity .5s"
+                >
+                  <H1 color="darkblue" textAlign="center">
+                    Nothing to show.
+                  </H1>
+                  <H1 color="darkblue" textAlign="center">
+                    Press "Render" to start.
+                  </H1>
                 </Div>
-                <Div position="absolute" bottom={0} right={0} display="flex" gap="8px" padding="8px">
-                  <Button onClick={goToDefaultView} width="2.5rem" height="2.5rem" borderRadius="50%">
-                    <FaHome style={{fontSize:"1.5rem"}}/>
+                <Div
+                  position="absolute"
+                  bottom={0}
+                  right={0}
+                  display="flex"
+                  gap="8px"
+                  padding="8px"
+                >
+                  <Button
+                    onClick={goToDefaultView}
+                    width="2.5rem"
+                    height="2.5rem"
+                    borderRadius="50%"
+                  >
+                    <FaHome style={{ fontSize: "1.5rem" }} />
                   </Button>
                 </Div>
               </Div>
             </Div>
-            <Div ref={consoleDivRef} overflow="auto" whiteSpace="pre-wrap" background="darkgreen" color="white" fontFamily="'Fira Code', monospace">
-              {messages.join("\n")+"\n"}
+            <Div
+              ref={consoleDivRef}
+              overflow="auto"
+              whiteSpace="pre-wrap"
+              background="darkgreen"
+              color="white"
+              fontFamily="'Fira Code', monospace"
+            >
+              {messages.join("\n") + "\n"}
             </Div>
           </div>
         </SplitPane>
-        <Div position="fixed" width="100vw" height="100vh" zIndex={9999} background="black" display={fsaUnsupported?"flex":"none"}alignItems="center"justifyContent="center">
-          <Div background="white" padding="8px" display="flex" flexDirection="column" alignItems="stretch">
-            <H1 color="red" textAlign="center">Your browser is too old!</H1>
-            <P textAlign="center">The File System Access API isn't supported.</P>
+        <Div
+          position="fixed"
+          width="100vw"
+          height="100vh"
+          zIndex={9999}
+          background="black"
+          display={fsaUnsupported ? "flex" : "none"}
+          alignItems="center"
+          justifyContent="center"
+        >
+          <Div
+            background="white"
+            padding="8px"
+            display="flex"
+            flexDirection="column"
+            alignItems="stretch"
+          >
+            <H1 color="red" textAlign="center">
+              Your browser is too old!
+            </H1>
+            <P textAlign="center">
+              The File System Access API isn't supported.
+            </P>
             <P textAlign="center">Upgrade to a modern browser.</P>
           </Div>
         </Div>
