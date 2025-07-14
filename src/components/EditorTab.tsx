@@ -1,6 +1,6 @@
 import { css } from "@emotion/react";
 import { Editor } from "@monaco-editor/react";
-import { forwardRef } from "react";
+import { forwardRef, RefObject, useEffect, useState } from "react";
 import { Aside, Br, Button, Div, DivProps, H1, Span } from "style-props-html";
 import { EditorTabAgent } from "../hooks/useEditorTabAgent";
 import { useRegisterOpenSCADLanguage } from "../openscad-lang";
@@ -16,18 +16,39 @@ import "@fontsource/fira-code/index.css";
 
 export interface EditorTabProps extends DivProps {
   agent: EditorTabAgent;
+  containerRef: RefObject<HTMLDivElement | null>;
 }
 export default forwardRef<HTMLDivElement, EditorTabProps>(function EditorTab(
-  { agent, ...rest },
+  { agent, containerRef, ...rest },
   ref
 ) {
   const showNoneSelectedDialog = !agent.fileIsLoaded && !agent.isNewFile;
   useRegisterOpenSCADLanguage();
+  const [currentContainerWidth, setCurrentContainerWidth] = useState<
+    number | null
+  >(null);
+  useEffect(() => {
+    const interval = setInterval(() => {
+      if (containerRef.current) {
+        const measuredWidth = containerRef.current.clientWidth;
+        setCurrentContainerWidth(measuredWidth);
+      }
+    }, 100);
+    return () => clearInterval(interval);
+  }, []);
+
+  useEffect(() => {
+    agent.layoutEditor();
+  },[
+    currentContainerWidth
+  ])
+
+  console.log("EditorTab width:", currentContainerWidth);
 
   return (
     <Div
       ref={ref}
-      width={"100%"}
+      width={currentContainerWidth ? `${currentContainerWidth}` : "100%"}
       display="grid"
       gridTemplateRows="auto 1fr"
       gridTemplateColumns="1fr"
@@ -89,33 +110,35 @@ export default forwardRef<HTMLDivElement, EditorTabProps>(function EditorTab(
         )}
       </Div>
 
-      <Div width="100%" height="100%" position="relative">
-        <Editor
-          onMount={(editor) => {
-            agent.storeEditor(editor);
-          }}
-          onChange={(newValue) => {
-            agent.setCode(newValue ?? "");
-            agent.computeDirty(newValue ?? "");
-          }}
-          css={css`
-            width: 100%;
-            height: 100%;
-            border: none;
-          `}
-          options={{
-            wordWrap: "on",
-            fontSize: 18,
-            fontFamily: "'Fira Code', monospace",
-            fontLigatures: true,
-            fontWeight: "400",
-            renderWhitespace: "all",
-            minimap: { enabled: false },
-          }}
-          defaultLanguage="openscad"
-          defaultValue={""}
-          theme="openscad-theme"
-        />
+      <Div width="100%" height="100%" position="relative" overflow="hidden">
+        {currentContainerWidth && (
+          <Editor
+            onMount={(editor) => {
+              agent.storeEditor(editor);
+            }}
+            onChange={(newValue) => {
+              agent.setCode(newValue ?? "");
+              agent.computeDirty(newValue ?? "");
+            }}
+            css={css`
+              width: 100%;
+              height: 100%;
+              border: none;
+            `}
+            options={{
+              wordWrap: "on",
+              fontSize: 18,
+              fontFamily: "'Fira Code', monospace",
+              fontLigatures: true,
+              fontWeight: "400",
+              renderWhitespace: "all",
+              minimap: { enabled: false },
+            }}
+            defaultLanguage="openscad"
+            defaultValue={""}
+            theme="openscad-theme"
+          />
+        )}
         <Div
           position="absolute"
           top="0"

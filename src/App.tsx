@@ -21,11 +21,35 @@ import "./App.css";
 import EditorTab from "./components/EditorTab";
 import useEditorTabAgent from "./hooks/useEditorTabAgent";
 import useFSAUnsupported from "./hooks/useFSAUnsupported";
-
 import { useRegisterOpenSCADLanguage } from "./openscad-lang";
 import { identifyParts, OpenSCADPart } from "./openscad-parsing";
 import { createLabeledAxis } from "./AxisVisualizer";
 import { formatError } from "./utils/serialization";
+import ResizeSvgHelper from "./utils/resizeSVGHelper";
+
+const resizeBarSVGHelper = new ResizeSvgHelper({
+  arrowHeadWidth: 12,
+  arrowHeadLength: 4,
+  shaftWidth: 2,
+  shaftLength: 2,
+  paddingX: 2,
+  paddingY: 2,
+});
+const resizeBarSVGUri = resizeBarSVGHelper.getDataUri("#000");
+
+const resizeBarStyle = {
+  // Because the computed width and height include padding,
+  // The tiling and centering end up pleasing
+  width: `${resizeBarSVGHelper.getComputedWidth()}px`,
+  cursor: "col-resize",
+  backgroundColor: "#e0f7ff",
+  backgroundImage: `url("${resizeBarSVGUri}")`,
+  backgroundRepeat: "repeat-y",
+  backgroundPosition: "center",
+  // Because the computed width and height include padding,
+  // The tiling and centering end up pleasing
+  backgroundSize: `${resizeBarSVGHelper.getComputedWidth()}px ${resizeBarSVGHelper.getComputedHeight()}px`,
+};
 
 const MAX_MESSAGES = 200;
 type OpenSCADPartWithSTL = OpenSCADPart & { stl?: Uint8Array };
@@ -91,31 +115,22 @@ export default function App() {
   const editorContainerRef = useRef<HTMLDivElement>(null);
   const viewerContainerRef = useRef<HTMLDivElement>(null);
 
-  // useEffect(() => {
-  //   setInterval(() => {
-  //     if (viewerContainerRef.current) {
-  //       sessionStorage.setItem(
-  //         "editorWidth",(window.innerWidth - 
-  //         viewerContainerRef.current.getBoundingClientRect().width).toString()
-  //       );
-  //     }
-  //   }, 100);
-  // }, []);
-
   // Split pane width is managed manually
   const resizingRef = useRef(false);
-  const [editorWidth, setEditorWidth] = useState(300);
+  const [editorWidth, setEditorWidth] = useState<number>(0);
+
+  const [windowWidth, setWindowWidth] = useState<number | null>(null);
 
   useEffect(() => {
-    const stored = sessionStorage.getItem("editorWidth");
-    if (stored) setEditorWidth(parseInt(stored));
-    else setEditorWidth(Math.floor(window.innerWidth * 0.5));
+    if (editorWidth === 0 && windowWidth) {
+      setEditorWidth(Math.floor(windowWidth * 0.5));
+    }
+  }, [windowWidth, editorWidth]);
+
+  useEffect(() => {
+    setWindowWidth(window.innerWidth);
   }, []);
 
-  useEffect(() => {
-    sessionStorage.setItem("editorWidth", editorWidth.toString());
-    editorTabAgent.layoutEditor();
-  }, [editorWidth, editorTabAgent]);
 
   useEffect(() => {
     const onMove = (e: MouseEvent) => {
@@ -181,6 +196,7 @@ export default function App() {
   }
 
   useEffect(() => {
+    // if(!editorWidth) return;
     const three = threeObjectsRef.current!;
     const container = viewerRef.current!;
     const { renderer, camera } = three;
@@ -188,7 +204,11 @@ export default function App() {
     renderer.setSize(width, height);
     camera.aspect = width / height;
     camera.updateProjectionMatrix();
+    
+    // renderer.domElement.classList.add("renderer-element");
+    
     container.appendChild(renderer.domElement);
+    
 
     orbitControlsRef.current = new OrbitControls(camera, renderer.domElement);
     orbitControlsRef.current.enableDamping = true;
@@ -200,10 +220,12 @@ export default function App() {
         container.removeChild(renderer.domElement);
       }
     };
-  }, []);
-
+  }, [
+   // editorWidth
+  ]);
 
   useEffect(() => {
+    // if(!editorWidth) return;
     const three = threeObjectsRef.current;
     const container = viewerRef.current;
     if (!three || !container) return;
@@ -225,7 +247,9 @@ export default function App() {
       window.removeEventListener("resize", onResize);
       onResize.cancel();
     };
-  }, []);
+  }, [
+  //  editorWidth
+  ]);
 
   useEffect(() => {
     const three = threeObjectsRef.current;
@@ -286,8 +310,8 @@ export default function App() {
   }, [renderedAtLeastOnce]);
 
   useEffect(() => {
+    // if(!editorWidth) return;
     const animate = () => {
-      requestAnimationFrame(animate);
       orbitControlsRef.current?.update();
       const three = threeObjectsRef.current!;
       three.renderer.render(three.scene, three.camera);
@@ -296,9 +320,13 @@ export default function App() {
         orbitControlsRef.current!.target
       );
       three.directionalLight.target.updateMatrixWorld();
+      requestAnimationFrame(animate);
+
     };
     animate();
-  }, []);
+  }, [
+   // editorWidth
+  ]);
 
   useEffect(() => {
     consoleDivRef.current?.scrollTo({
@@ -424,8 +452,9 @@ export default function App() {
         if (p.exported) await renderPartInWorker(n, p, backend);
       setRenderedAtLeastOnce(true);
       log("Done");
-      updateThreeScene();
       setPartSettings({ ...partSettings });
+      updateThreeScene();
+
     } catch (err) {
       alert("Rendering failed");
       log(`Fail: ${formatError(err)}`);
@@ -448,7 +477,15 @@ export default function App() {
 
   return (
     <>
-      <div style={{ width: "100vw", height: "100vh", overflow: "hidden", display: "flex" }}>
+      <div
+        style={{
+          width: "100vw",
+          height: "100vh",
+          overflow: "hidden",
+          display: "grid",
+          gridTemplateColumns: "auto auto auto",
+        }}
+      >
         <div
           ref={editorContainerRef}
           style={{
@@ -459,160 +496,172 @@ export default function App() {
             width: `${editorWidth}px`,
           }}
         >
-          <EditorTab agent={editorTabAgent} />
+          <EditorTab agent={editorTabAgent} containerRef={editorContainerRef} />
         </div>
+        <div style={resizeBarStyle} onMouseDown={startResizing} />
         <div
-          style={{ width: "4px", cursor: "col-resize", background: "#ccc" }}
-          onMouseDown={startResizing}
-        />
-        <div
+          className="viewer-container"
           ref={viewerContainerRef}
           style={{
+            width: `calc(100vw - ${editorWidth}px - 16px)`,
             height: "100%",
-            flex: 1,
             display: "grid",
             gridTemplateRows: "auto 1.5fr 1fr",
+            gridTemplateColumns: "1fr",
+            overflow: "hidden",
           }}
         >
-            <Div display="flex" gap="8px" padding="8px">
-              <Button
-                disabled={isProcessing}
-                flex={1}
-                fontSize="150%"
-                onClick={() => renderModel("Manifold")}
-              >
-                Preview
-              </Button>
-              <Button
-                disabled={isProcessing}
-                flex={1}
-                fontSize="150%"
-                onClick={() => renderModel("CGAL")}
-              >
-                Render
-              </Button>
+          <Div
+            width={`calc(100vw - ${editorWidth}px - 16px)`}
+            display="flex"
+            gap="8px"
+            padding="8px"
+          >
+            <Button
+              disabled={isProcessing}
+              flex={1}
+              fontSize="150%"
+              onClick={() => renderModel("Manifold")}
+            >
+              Preview
+            </Button>
+            <Button
+              disabled={isProcessing}
+              flex={1}
+              fontSize="150%"
+              onClick={() => renderModel("CGAL")}
+            >
+              Render
+            </Button>
+          </Div>
+          <Div
+            width={`calc(100vw - ${editorWidth}px - 16px)`}
+            display="grid"
+            gridTemplateColumns="1.5fr 3fr"
+            height="100%"
+            overflow="hidden"
+          >
+            <Div
+              background="white"
+              padding="8px"
+              display="flex"
+              flexDirection="column"
+              gap="8px"
+            >
+              {Object.keys(partSettings).length ? (
+                Object.entries(partSettings).map(([name, s], i) => (
+                  <Div key={i} display="flex" alignItems="center" gap="0.7em">
+                    <Label
+                      display="flex"
+                      alignItems="center"
+                      gap="0.7em"
+                      color={!s.exported ? "#666" : undefined}
+                    >
+                      <Input
+                        type="checkbox"
+                        checked={s.visible}
+                        onChange={() => {
+                          s.visible = !s.visible;
+                          setPartSettings({ ...partSettings });
+                        }}
+                      />
+                      {s.exported ? name : `${name}(ignored)`}
+                    </Label>
+                    {completedModelRef.current[name]?.stl && (
+                      <Button
+                        width="1.25rem"
+                        height="1.25rem"
+                        onClick={() => downloadPart(name)}
+                      >
+                        <FaFileDownload style={{ fontSize: "0.75rem" }} />
+                      </Button>
+                    )}
+                  </Div>
+                ))
+              ) : (
+                <I>No parts yet.</I>
+              )}
             </Div>
-            <Div display="grid" gridTemplateColumns="1.3fr 3fr" height="100%">
+            <Div background="#aaa" position="relative">
+              <Div ref={viewerRef}   />
               <Div
-                background="white"
-                padding="8px"
+                position="absolute"
+                top={0}
+                left={0}
+                right={0}
+                bottom={0}
+                display="flex"
+                alignItems="center"
+                justifyContent="center"
+                pointerEvents={isProcessing ? "auto" : "none"}
+                opacity={isProcessing ? 1 : 0}
+                transition="opacity .5s"
+              >
+                <Div
+                  width="48px"
+                  height="48px"
+                  css={css`
+                    border-radius: 50%;
+                    border: 4px solid blue;
+                    border-top: 4px solid transparent;
+                    animation: ${spinnerAnimation} 2s linear infinite;
+                  `}
+                />
+              </Div>
+              <Div
+                position="absolute"
+                top={0}
+                left={0}
+                right={0}
+                bottom={0}
                 display="flex"
                 flexDirection="column"
-                gap="8px"
+                alignItems="center"
+                justifyContent="center"
+                pointerEvents={
+                  renderedAtLeastOnce || isProcessing ? "none" : "auto"
+                }
+                opacity={renderedAtLeastOnce || isProcessing ? 0 : 1}
+                transition="opacity .5s"
               >
-                {Object.keys(partSettings).length ? (
-                  Object.entries(partSettings).map(([name, s], i) => (
-                    <Div key={i} display="flex" alignItems="center" gap="0.7em">
-                      <Label
-                        display="flex"
-                        alignItems="center"
-                        gap="0.7em"
-                        color={!s.exported ? "#666" : undefined}
-                      >
-                        <Input
-                          type="checkbox"
-                          checked={s.visible}
-                          onChange={() => {
-                            s.visible = !s.visible;
-                            setPartSettings({ ...partSettings });
-                          }}
-                        />
-                        {s.exported ? name : `${name}(ignored)`}
-                      </Label>
-                      {completedModelRef.current[name]?.stl && (
-                        <Button
-                          width="1.25rem"
-                          height="1.25rem"
-                          onClick={() => downloadPart(name)}
-                        >
-                          <FaFileDownload style={{ fontSize: "0.75rem" }} />
-                        </Button>
-                      )}
-                    </Div>
-                  ))
-                ) : (
-                  <I>No parts yet.</I>
-                )}
+                <H1 color="darkblue" textAlign="center">
+                  Nothing to show.
+                </H1>
+                <H1 color="darkblue" textAlign="center">
+                  Press "Render" to start.
+                </H1>
               </Div>
-              <Div background="#aaa" position="relative" height="100%">
-                <Div ref={viewerRef} width="100%" height="100%" />
-                <Div
-                  position="absolute"
-                  top={0}
-                  left={0}
-                  right={0}
-                  bottom={0}
-                  display="flex"
-                  alignItems="center"
-                  justifyContent="center"
-                  pointerEvents={isProcessing ? "auto" : "none"}
-                  opacity={isProcessing ? 1 : 0}
-                  transition="opacity .5s"
+              <Div
+                position="absolute"
+                bottom={0}
+                right={0}
+                display="flex"
+                gap="8px"
+                padding="8px"
+              >
+                <Button
+                  onClick={goToDefaultView}
+                  width="2.5rem"
+                  height="2.5rem"
+                  borderRadius="50%"
                 >
-                  <Div
-                    width="48px"
-                    height="48px"
-                    css={css`
-                      border-radius: 50%;
-                      border: 4px solid blue;
-                      border-top: 4px solid transparent;
-                      animation: ${spinnerAnimation} 2s linear infinite;
-                    `}
-                  />
-                </Div>
-                <Div
-                  position="absolute"
-                  top={0}
-                  left={0}
-                  right={0}
-                  bottom={0}
-                  display="flex"
-                  flexDirection="column"
-                  alignItems="center"
-                  justifyContent="center"
-                  pointerEvents={
-                    renderedAtLeastOnce || isProcessing ? "none" : "auto"
-                  }
-                  opacity={renderedAtLeastOnce || isProcessing ? 0 : 1}
-                  transition="opacity .5s"
-                >
-                  <H1 color="darkblue" textAlign="center">
-                    Nothing to show.
-                  </H1>
-                  <H1 color="darkblue" textAlign="center">
-                    Press "Render" to start.
-                  </H1>
-                </Div>
-                <Div
-                  position="absolute"
-                  bottom={0}
-                  right={0}
-                  display="flex"
-                  gap="8px"
-                  padding="8px"
-                >
-                  <Button
-                    onClick={goToDefaultView}
-                    width="2.5rem"
-                    height="2.5rem"
-                    borderRadius="50%"
-                  >
-                    <FaHome style={{ fontSize: "1.5rem" }} />
-                  </Button>
-                </Div>
+                  <FaHome style={{ fontSize: "1.5rem" }} />
+                </Button>
               </Div>
             </Div>
-            <Div
-              ref={consoleDivRef}
-              overflow="auto"
-              whiteSpace="pre-wrap"
-              background="darkgreen"
-              color="white"
-              fontFamily="'Fira Code', monospace"
-            >
-              {messages.join("\n") + "\n"}
-            </Div>
-          </div>
+          </Div>
+          <Div
+            ref={consoleDivRef}
+            overflow="auto"
+            whiteSpace="pre-wrap"
+            background="darkgreen"
+            color="white"
+            fontFamily="'Fira Code', monospace"
+            width={`calc(100vw - ${editorWidth}px - 16px)`}
+          >
+            {messages.join("\n") + "\n"}
+          </Div>
+        </div>
         <Div
           position="fixed"
           width="100vw"
