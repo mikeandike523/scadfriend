@@ -1,10 +1,8 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { css, keyframes } from "@emotion/react";
 import Color from "color";
-import { throttle } from "lodash";
 import * as THREE from "three";
 import { OrbitControls } from "three/examples/jsm/controls/OrbitControls.js";
-import { STLLoader } from "three/examples/jsm/loaders/STLLoader.js";
 
 import "@fontsource/fira-code/300.css";
 import "@fontsource/fira-code/400.css";
@@ -25,7 +23,8 @@ import { useRegisterOpenSCADLanguage } from "./openscad-lang";
 import { identifyParts, OpenSCADPart } from "./openscad-parsing";
 import { createLabeledAxis } from "./AxisVisualizer";
 import { formatError } from "./utils/serialization";
-import ResizeSvgHelper from "./utils/resizeSVGHelper";
+import ResizeSvgHelper from "./utils/ResizeSVGHelper";
+import ThreeViewer, { ThreeHandles } from "./components/ThreeViewer";
 
 const resizeBarSVGHelper = new ResizeSvgHelper({
   arrowHeadWidth: 12,
@@ -101,7 +100,6 @@ export default function App() {
   const fsaUnsupported = useFSAUnsupported();
 
   const consoleDivRef = useRef<HTMLDivElement>(null);
-  const viewerRef = useRef<HTMLDivElement>(null);
   const [messages, setMessages] = useState<string[]>([]);
   const [code, setCode] = useState("");
   const [isProcessing, setIsProcessing] = useState(false);
@@ -156,100 +154,9 @@ export default function App() {
   }, []);
 
   const orbitControlsRef = useRef<OrbitControls | null>(null);
-  const threeObjectsRef = useRef<{
-    scene: THREE.Scene;
-    camera: THREE.PerspectiveCamera;
-    renderer: THREE.WebGLRenderer;
-    loader: STLLoader;
-    ambientLight: THREE.AmbientLight;
-    directionalLight: THREE.DirectionalLight;
-    partsGroup: THREE.Group;
-  } | null>(null);
+  const threeObjectsRef = useRef<ThreeHandles | null>(null);
   const axesAdded = useRef(false);
 
-  if (!threeObjectsRef.current) {
-    const scene = new THREE.Scene();
-    scene.background = new THREE.Color(0xaaaaaa);
-    const camera = new THREE.PerspectiveCamera(75, 1, 0.1, 1000);
-    camera.position.set(0, 0, 100);
-    const renderer = new THREE.WebGLRenderer({ antialias: true });
-    renderer.shadowMap.enabled = true;
-    const loader = new STLLoader();
-    const ambientLight = new THREE.AmbientLight(0xffffff, 0.25);
-    const directionalLight = new THREE.DirectionalLight(0xffffff, 1);
-    directionalLight.position.copy(camera.position);
-    camera.add(directionalLight);
-    scene.add(camera, ambientLight);
-    const partsGroup = new THREE.Group();
-    partsGroup.name = "partsGroup";
-    scene.add(partsGroup);
-
-    threeObjectsRef.current = {
-      scene,
-      camera,
-      renderer,
-      loader,
-      ambientLight,
-      directionalLight,
-      partsGroup,
-    };
-  }
-
-  useEffect(() => {
-    // if(!editorWidth) return;
-    const three = threeObjectsRef.current!;
-    const container = viewerRef.current!;
-    const { renderer, camera } = three;
-    const { width, height } = container.getBoundingClientRect();
-    renderer.setSize(width, height);
-    camera.aspect = width / height;
-    camera.updateProjectionMatrix();
-    
-    // renderer.domElement.classList.add("renderer-element");
-    
-    container.appendChild(renderer.domElement);
-    
-
-    orbitControlsRef.current = new OrbitControls(camera, renderer.domElement);
-    orbitControlsRef.current.enableDamping = true;
-    orbitControlsRef.current.dampingFactor = 0.05;
-
-    return () => {
-      orbitControlsRef.current?.dispose();
-      if (renderer.domElement.parentElement === container) {
-        container.removeChild(renderer.domElement);
-      }
-    };
-  }, [
-   // editorWidth
-  ]);
-
-  useEffect(() => {
-    // if(!editorWidth) return;
-    const three = threeObjectsRef.current;
-    const container = viewerRef.current;
-    if (!three || !container) return;
-
-    const onResize = throttle(
-      () => {
-        const { width, height } = container.getBoundingClientRect();
-        three.renderer.setSize(width, height);
-        three.camera.aspect = width / height;
-        three.camera.updateProjectionMatrix();
-      },
-      100,
-      { trailing: true }
-    );
-
-    window.addEventListener("resize", onResize);
-    onResize();
-    return () => {
-      window.removeEventListener("resize", onResize);
-      onResize.cancel();
-    };
-  }, [
-  //  editorWidth
-  ]);
 
   useEffect(() => {
     const three = threeObjectsRef.current;
@@ -309,24 +216,6 @@ export default function App() {
     });
   }, [renderedAtLeastOnce]);
 
-  useEffect(() => {
-    // if(!editorWidth) return;
-    const animate = () => {
-      orbitControlsRef.current?.update();
-      const three = threeObjectsRef.current!;
-      three.renderer.render(three.scene, three.camera);
-      three.directionalLight.position.copy(three.camera.position);
-      three.directionalLight.target.position.copy(
-        orbitControlsRef.current!.target
-      );
-      three.directionalLight.target.updateMatrixWorld();
-      requestAnimationFrame(animate);
-
-    };
-    animate();
-  }, [
-   // editorWidth
-  ]);
 
   useEffect(() => {
     consoleDivRef.current?.scrollTo({
@@ -583,7 +472,7 @@ export default function App() {
               )}
             </Div>
             <Div background="#aaa" position="relative">
-              <Div ref={viewerRef}   />
+              <ThreeViewer handleRef={threeObjectsRef} controlsRef={orbitControlsRef} />
               <Div
                 position="absolute"
                 top={0}
