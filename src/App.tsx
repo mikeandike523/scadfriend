@@ -275,7 +275,7 @@ export default function App() {
   };
 
   const updateVisibility = useCallback(() => {
-    threeObjectsRef.current!.scene.traverse((child) => {
+    threeObjectsRef.current?.scene?.traverse((child) => {
       if (child instanceof THREE.Mesh && !child.userData.keep) {
         child.visible = !!partSettings[child.name]?.visible;
       }
