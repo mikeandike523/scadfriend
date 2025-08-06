@@ -14,7 +14,7 @@ export interface ThreeHandles {
   partsGroup: THREE.Group;
 }
 
-function Scene({ handleRef, controlsRef }: { handleRef: MutableRefObject<ThreeHandles | null>; controlsRef: MutableRefObject<OrbitControls | null>; }) {
+function Scene({ handleRef, controlsRef, onReady }: { handleRef: MutableRefObject<ThreeHandles | null>; controlsRef: MutableRefObject<OrbitControls | null>; onReady?: () => void; }) {
   const { scene, camera, gl } = useThree();
   const groupRef = useRef<THREE.Group>(null!);
   const ambientRef = useRef<THREE.AmbientLight>(null!);
@@ -30,7 +30,8 @@ function Scene({ handleRef, controlsRef }: { handleRef: MutableRefObject<ThreeHa
       directionalLight: dirRef.current,
       partsGroup: groupRef.current,
     };
-  }, [scene, camera, gl, handleRef]);
+    onReady?.();
+  }, [scene, camera, gl, handleRef, onReady]);
 
   useFrame(() => {
     dirRef.current.position.copy(camera.position);
@@ -50,7 +51,7 @@ function Scene({ handleRef, controlsRef }: { handleRef: MutableRefObject<ThreeHa
   );
 }
 
-export default function ThreeViewer({ handleRef, controlsRef }: { handleRef: MutableRefObject<ThreeHandles | null>; controlsRef: MutableRefObject<OrbitControls | null>; }) {
+export default function ThreeViewer({ handleRef, controlsRef, onReady }: { handleRef: MutableRefObject<ThreeHandles | null>; controlsRef: MutableRefObject<OrbitControls | null>; onReady?: () => void; }) {
   return (
     <Canvas
       camera={{ position: [0, 0, 100], fov: 75 }}
@@ -59,7 +60,7 @@ export default function ThreeViewer({ handleRef, controlsRef }: { handleRef: Mut
         scene.background = new THREE.Color(0xaaaaaa);
       }}
     >
-      <Scene handleRef={handleRef} controlsRef={controlsRef} />
+      <Scene handleRef={handleRef} controlsRef={controlsRef} onReady={onReady} />
     </Canvas>
   );
 }

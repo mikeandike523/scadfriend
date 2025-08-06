@@ -156,12 +156,12 @@ export default function App() {
   const orbitControlsRef = useRef<OrbitControls | null>(null);
   const threeObjectsRef = useRef<ThreeHandles | null>(null);
   const axesAdded = useRef(false);
+  const [threeReady, setThreeReady] = useState(false);
 
 
   useEffect(() => {
-    const three = threeObjectsRef.current;
-    if (!three || axesAdded.current) return;
-    const { scene } = three;
+    if (!threeReady || axesAdded.current) return;
+    const { scene } = threeObjectsRef.current!;
 
     const addAxis = (
       dir: THREE.Vector3,
@@ -206,7 +206,7 @@ export default function App() {
     );
 
     axesAdded.current = true;
-  }, []);
+  }, [threeReady]);
 
   useEffect(() => {
     if (!renderedAtLeastOnce) return;
@@ -472,7 +472,11 @@ export default function App() {
               )}
             </Div>
             <Div background="#aaa" position="relative">
-              <ThreeViewer handleRef={threeObjectsRef} controlsRef={orbitControlsRef} />
+              <ThreeViewer
+                handleRef={threeObjectsRef}
+                controlsRef={orbitControlsRef}
+                onReady={() => setThreeReady(true)}
+              />
               <Div
                 position="absolute"
                 top={0}
