@@ -1,8 +1,8 @@
-import { Canvas, useThree, useFrame } from '@react-three/fiber';
-import { OrbitControls } from '@react-three/drei';
-import * as THREE from 'three';
-import { STLLoader } from 'three/examples/jsm/loaders/STLLoader.js';
-import { MutableRefObject, useEffect, useRef } from 'react';
+import { Canvas, useThree, useFrame } from "@react-three/fiber";
+import { OrbitControls } from "@react-three/drei";
+import * as THREE from "three";
+import { STLLoader } from "three/examples/jsm/loaders/STLLoader.js";
+import { MutableRefObject, useEffect, useRef } from "react";
 
 export interface ThreeHandles {
   scene: THREE.Scene;
@@ -14,7 +14,16 @@ export interface ThreeHandles {
   partsGroup: THREE.Group;
 }
 
-function Scene({ handleRef, controlsRef, onReady }: { handleRef: MutableRefObject<ThreeHandles | null>; controlsRef: MutableRefObject<OrbitControls | null>; onReady?: () => void; }) {
+function Scene({
+  handleRef,
+  controlsRef,
+  onReady,
+}: {
+  handleRef: MutableRefObject<ThreeHandles | null>;
+  // @ts-expect-error weird ref typing
+  controlsRef: MutableRefObject<OrbitControls | null>;
+  onReady?: () => void;
+}) {
   const { scene, camera, gl } = useThree();
   const groupRef = useRef<THREE.Group>(null!);
   const ambientRef = useRef<THREE.AmbientLight>(null!);
@@ -51,16 +60,29 @@ function Scene({ handleRef, controlsRef, onReady }: { handleRef: MutableRefObjec
   );
 }
 
-export default function ThreeViewer({ handleRef, controlsRef, onReady }: { handleRef: MutableRefObject<ThreeHandles | null>; controlsRef: MutableRefObject<OrbitControls | null>; onReady?: () => void; }) {
+export default function ThreeViewer({
+  handleRef,
+  controlsRef,
+  onReady,
+}: {
+  handleRef: MutableRefObject<ThreeHandles | null>;
+  // @ts-expect-error weird ref typing
+  controlsRef: MutableRefObject<OrbitControls | null>;
+  onReady?: () => void;
+}) {
   return (
     <Canvas
       camera={{ position: [0, 0, 100], fov: 75 }}
-      style={{ width: '100%', height: '100%' }}
+      style={{ width: "100%", height: "100%" }}
       onCreated={({ scene }) => {
         scene.background = new THREE.Color(0xaaaaaa);
       }}
     >
-      <Scene handleRef={handleRef} controlsRef={controlsRef} onReady={onReady} />
+      <Scene
+        handleRef={handleRef}
+        controlsRef={controlsRef}
+        onReady={onReady}
+      />
     </Canvas>
   );
 }
