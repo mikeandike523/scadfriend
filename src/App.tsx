@@ -155,14 +155,35 @@ export default function App() {
 
   const orbitControlsRef = useRef<OrbitControls | null>(null);
   const threeObjectsRef = useRef<ThreeHandles | null>(null);
-  const axesAdded = useRef(false);
   const [threeReady, setThreeReady] = useState(false);
 
 
   useEffect(() => {
-    if (!threeReady || axesAdded.current) return;
-    const { scene } = threeObjectsRef.current!;
+    if (!renderedAtLeastOnce) return;
+    const three = threeObjectsRef.current!;
+    const { scene } = three;
 
+    // Remove any existing axes
+    traverseSyncChildrenFirst(scene, (node) => {
+      if (node.name.startsWith("__AXIS_")) {
+        scene.remove(node);
+      }
+    });
+
+    // Compute bounding box of all parts
+    const bbox = new THREE.Box3();
+    traverseSyncChildrenFirst(scene, (node) => {
+      if (node instanceof THREE.Mesh && !node.userData.keep) {
+        bbox.expandByObject(node);
+      }
+    });
+    if (bbox.isEmpty()) return;
+
+    const size = new THREE.Vector3();
+    bbox.getSize(size);
+    const maxDim = Math.max(size.x, size.y, size.z);
+
+    // Add axes sized to bounding box, with ticks every 5 units
     const addAxis = (
       dir: THREE.Vector3,
       mainColor: THREE.Color,
@@ -173,18 +194,15 @@ export default function App() {
       createLabeledAxis({
         scene,
         direction: dir,
-        length: 100,
-        tickSpacing: 10,
-        tickLength: 2,
-        majorTickInterval: 5,
-        majorTickLength: 4,
+        length: maxDim,
+        tickSpacing: 5,
         mainLineColor: mainColor,
         tickColor,
         labelText: label,
         labelFontSize: 4,
         labelOffset: offset,
         name: "__AXIS_" + label,
-        visible: false,
+        visible: true,
       });
     };
 
@@ -204,16 +222,6 @@ export default function App() {
         new THREE.Vector3(0, 5, 0)
       )
     );
-
-    axesAdded.current = true;
-  }, [threeReady]);
-
-  useEffect(() => {
-    if (!renderedAtLeastOnce) return;
-    const { scene } = threeObjectsRef.current!;
-    traverseSyncChildrenFirst(scene, (node) => {
-      if (node.name.startsWith("__AXIS_")) node.visible = true;
-    });
   }, [renderedAtLeastOnce]);
 
 
