@@ -21,7 +21,7 @@ import useEditorTabAgent from "./hooks/useEditorTabAgent";
 import useFSAUnsupported from "./hooks/useFSAUnsupported";
 import { useRegisterOpenSCADLanguage } from "./openscad-lang";
 import { identifyParts, OpenSCADPart } from "./openscad-parsing";
-import { createLabeledAxis } from "./AxisVisualizer";
+import { createLabeledAxis, removeAxes } from "./AxisVisualizer";
 import { formatError } from "./utils/serialization";
 import ResizeSvgHelper from "./utils/ResizeSVGHelper";
 import ThreeViewer, { ThreeHandles } from "./components/ThreeViewer";
@@ -159,73 +159,6 @@ export default function App() {
 
 
   useEffect(() => {
-    if (!renderedAtLeastOnce) return;
-    const three = threeObjectsRef.current!;
-    const { scene } = three;
-
-    // Remove any existing axes
-    traverseSyncChildrenFirst(scene, (node) => {
-      if (node.name.startsWith("__AXIS_")) {
-        scene.remove(node);
-      }
-    });
-
-    // Compute bounding box of all parts
-    const bbox = new THREE.Box3();
-    traverseSyncChildrenFirst(scene, (node) => {
-      if (node instanceof THREE.Mesh && !node.userData.keep) {
-        bbox.expandByObject(node);
-      }
-    });
-    if (bbox.isEmpty()) return;
-
-    const size = new THREE.Vector3();
-    bbox.getSize(size);
-    const maxDim = Math.max(size.x, size.y, size.z);
-
-    // Add axes sized to bounding box, with ticks every 5 units
-    const addAxis = (
-      dir: THREE.Vector3,
-      mainColor: THREE.Color,
-      tickColor: THREE.Color,
-      label: string,
-      offset: THREE.Vector3
-    ) => {
-      createLabeledAxis({
-        scene,
-        direction: dir,
-        length: maxDim,
-        tickSpacing: 5,
-        mainLineColor: mainColor,
-        tickColor,
-        labelText: label,
-        labelFontSize: 4,
-        labelOffset: offset,
-        name: "__AXIS_" + label,
-        visible: true,
-      });
-    };
-
-    [
-      { dir: new THREE.Vector3(1, 0, 0), color: 0xff0000, label: "+X" },
-      { dir: new THREE.Vector3(0, 0, -1), color: 0x00ff00, label: "+Y" },
-      { dir: new THREE.Vector3(0, 1, 0), color: 0x0000ff, label: "+Z" },
-      { dir: new THREE.Vector3(-1, 0, 0), color: 0xffff00, label: "-X" },
-      { dir: new THREE.Vector3(0, 0, 1), color: 0x00ffff, label: "-Y" },
-      { dir: new THREE.Vector3(0, -1, 0), color: 0xff00ff, label: "-Z" },
-    ].forEach(({ dir, color, label }) =>
-      addAxis(
-        dir,
-        new THREE.Color(color),
-        new THREE.Color(0x000000),
-        label,
-        new THREE.Vector3(0, 5, 0)
-      )
-    );
-  }, [renderedAtLeastOnce]);
-
-
-  useEffect(() => {
     consoleDivRef.current?.scrollTo({
       top: consoleDivRef.current.scrollHeight,
       behavior: "smooth",
@@ -259,7 +192,7 @@ export default function App() {
 
   const updateThreeScene = () => {
     const three = threeObjectsRef.current!;
-    const { loader, partsGroup } = three;
+    const { loader, partsGroup, scene } = three;
     partsGroup.clear();
     Object.entries(completedModelRef.current).forEach(([name, part]) => {
       if (!part.stl) return;
@@ -280,6 +213,58 @@ export default function App() {
       }
     });
     if (!renderedAtLeastOnce) goToDefaultView();
+
+    // Remove old axes and add new axes sized to bounding box (1.5× max dimension), with ticks every 5 units
+    removeAxes(scene);
+    const bbox = new THREE.Box3();
+    traverseSyncChildrenFirst(scene, (node) => {
+      if (node instanceof THREE.Mesh && !node.userData.keep) {
+        bbox.expandByObject(node);
+      }
+    });
+    if (!bbox.isEmpty()) {
+      const size = new THREE.Vector3();
+      bbox.getSize(size);
+      const maxDim = Math.max(size.x, size.y, size.z);
+      const axisLength = (maxDim / 2) * 1.5;
+      const addAxis = (
+        dir: THREE.Vector3,
+        mainColor: THREE.Color,
+        tickColor: THREE.Color,
+        label: string,
+        offset: THREE.Vector3
+      ) => {
+        createLabeledAxis({
+          scene,
+          direction: dir,
+          length: axisLength,
+          tickSpacing: 5,
+          mainLineColor: mainColor,
+          tickColor,
+          labelText: label,
+          labelFontSize: 4,
+          labelOffset: offset,
+          name: "__AXIS_" + label,
+          visible: true,
+        });
+      };
+      [
+        { dir: new THREE.Vector3(1, 0, 0), color: 0xff0000, label: "+X" },
+        { dir: new THREE.Vector3(0, 0, -1), color: 0x00ff00, label: "+Y" },
+        { dir: new THREE.Vector3(0, 1, 0), color: 0x0000ff, label: "+Z" },
+        { dir: new THREE.Vector3(-1, 0, 0), color: 0xffff00, label: "-X" },
+        { dir: new THREE.Vector3(0, 0, 1), color: 0x00ffff, label: "-Y" },
+        { dir: new THREE.Vector3(0, -1, 0), color: 0xff00ff, label: "-Z" },
+      ].forEach(({ dir, color, label }) =>
+        addAxis(
+          dir,
+          new THREE.Color(color),
+          new THREE.Color(0x000000),
+          label,
+          new THREE.Vector3(0, 5, 0)
+        )
+      );
+    }
   };
 
   const updateVisibility = useCallback(() => {

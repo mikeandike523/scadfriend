@@ -108,3 +108,15 @@ export function createLabeledAxis(options: AxisOptions) {
 
   scene.add(mainLine);
 }
+
+/**
+ * Remove all axes previously added by createLabeledAxis.
+ * Looks for top-level objects with names starting with "__AXIS_" and removes them from the scene.
+ */
+export function removeAxes(scene: THREE.Scene) {
+  scene.children.slice().forEach((child) => {
+    if (child.name.startsWith("__AXIS_")) {
+      scene.remove(child);
+    }
+  });
+}
