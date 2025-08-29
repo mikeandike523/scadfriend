@@ -456,28 +456,33 @@ export default function App() {
             display: "flex",
           }}
         >
-          <Div
-            display="flex"
-            alignItems="center"
-            justifyContent="space-between"
-            padding="8px"
-            background="#ddd"
-          >
-            <P margin="0">Project: {projectHandle.name}</P>
-            <Button onClick={closeProject}>Close Project</Button>
-          </Div>
           <div
             style={{
               width: FILE_BROWSER_WIDTH,
               height: "100%",
-              overflow: "auto",
               background: "#eee",
+              display: "flex",
+              flexDirection: "column",
             }}
           >
-            <FileBrowser
-              rootHandle={projectHandle}
-              onOpenFile={openFileFromBrowser}
-            />
+            <Div
+              display="flex"
+              alignItems="center"
+              justifyContent="space-between"
+              padding="8px"
+              background="#ddd"
+            >
+              <P margin="0" fontWeight="bold">
+                {projectHandle.name}
+              </P>
+              <Button onClick={closeProject}>Close Project</Button>
+            </Div>
+            <div style={{ flex: 1, overflow: "auto" }}>
+              <FileBrowser
+                rootHandle={projectHandle}
+                onOpenFile={openFileFromBrowser}
+              />
+            </div>
           </div>
           <div
             ref={editorContainerRef}
