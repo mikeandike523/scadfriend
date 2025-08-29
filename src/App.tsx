@@ -303,6 +303,13 @@ export default function App() {
     }
   };
 
+  /**
+   * Close the current project and return to initial state
+   */
+  const closeProject = () => {
+    setProjectHandle(null);
+  };
+
   const openFileFromBrowser = async (
     path: string,
     handle: FileSystemFileHandle
@@ -427,10 +434,18 @@ export default function App() {
           width="100vw"
           height="100vh"
           display="flex"
+          flexDirection="column"
           alignItems="center"
           justifyContent="center"
+          gap="16px"
+          padding="0 32px"
         >
-          <Button onClick={selectProject}>Select Project Folder</Button>
+          <P textAlign="center" maxWidth="600px">
+            SCADFriend works by using folders to organize projects. Select a folder by clicking the button below.
+          </P>
+          <Button fontSize="150%" padding="16px 32px" onClick={selectProject}>
+            Select Project Folder
+          </Button>
         </Div>
       ) : (
         <div
@@ -441,6 +456,16 @@ export default function App() {
             display: "flex",
           }}
         >
+          <Div
+            display="flex"
+            alignItems="center"
+            justifyContent="space-between"
+            padding="8px"
+            background="#ddd"
+          >
+            <P margin="0">Project: {projectHandle.name}</P>
+            <Button onClick={closeProject}>Close Project</Button>
+          </Div>
           <div
             style={{
               width: FILE_BROWSER_WIDTH,
