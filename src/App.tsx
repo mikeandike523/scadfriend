@@ -119,15 +119,16 @@ export default function App() {
   const editorContainerRef = useRef<HTMLDivElement>(null);
   const viewerContainerRef = useRef<HTMLDivElement>(null);
 
-  // Split pane width is managed manually
-  const resizingRef = useRef(false);
+  const FILE_BROWSER_WIDTH = 200;
+  // Split pane widths are managed manually
+  const resizingRef = useRef<'fileBrowser' | 'editor' | null>(null);
+  const [fileBrowserWidth, setFileBrowserWidth] = useState<number>(FILE_BROWSER_WIDTH);
   const [editorWidth, setEditorWidth] = useState<number>(0);
 
   const [windowWidth, setWindowWidth] = useState<number | null>(null);
 
   const [projectHandle, setProjectHandle] =
     useState<FileSystemDirectoryHandle | null>(null);
-  const FILE_BROWSER_WIDTH = 200;
 
   useEffect(() => {
     if (editorWidth === 0 && windowWidth) {
@@ -152,14 +153,19 @@ export default function App() {
 
   useEffect(() => {
     const onMove = (e: MouseEvent) => {
-      if (!resizingRef.current) return;
+      const which = resizingRef.current;
+      if (!which) return;
       const min = 100;
       const max = window.innerWidth - 100;
-      const newWidth = Math.min(max, Math.max(min, e.clientX));
-      setEditorWidth(newWidth);
+      const newSize = Math.min(max, Math.max(min, e.clientX));
+      if (which === "fileBrowser") {
+        setFileBrowserWidth(newSize);
+      } else if (which === "editor") {
+        setEditorWidth(newSize);
+      }
     };
     const stop = () => {
-      resizingRef.current = false;
+      resizingRef.current = null;
     };
     window.addEventListener("mousemove", onMove);
     window.addEventListener("mouseup", stop);
@@ -169,8 +175,8 @@ export default function App() {
     };
   }, []);
 
-  const startResizing = useCallback(() => {
-    resizingRef.current = true;
+  const startResizing = useCallback((which: "fileBrowser" | "editor") => {
+    resizingRef.current = which;
   }, []);
 
   const orbitControlsRef = useRef<OrbitControls | null>(null);
@@ -456,15 +462,15 @@ export default function App() {
             display: "flex",
           }}
         >
-          <div
-            style={{
-              width: FILE_BROWSER_WIDTH,
-              height: "100%",
-              background: "#eee",
-              display: "flex",
-              flexDirection: "column",
-            }}
-          >
+        <div
+          style={{
+            width: fileBrowserWidth,
+            height: "100%",
+            background: "#eee",
+            display: "flex",
+            flexDirection: "column",
+          }}
+        >
             <Div
               display="flex"
               alignItems="center"
@@ -483,8 +489,9 @@ export default function App() {
                 onOpenFile={openFileFromBrowser}
               />
             </div>
-          </div>
-          <div
+        </div>
+        <div style={resizeBarStyle} onMouseDown={() => startResizing("fileBrowser")} />
+        <div
             ref={editorContainerRef}
             style={{
               height: "100%",
@@ -499,7 +506,7 @@ export default function App() {
               containerRef={editorContainerRef}
             />
           </div>
-          <div style={resizeBarStyle} onMouseDown={startResizing} />
+          <div style={resizeBarStyle} onMouseDown={() => startResizing("editor")} />
           <div
             className="viewer-container"
             ref={viewerContainerRef}

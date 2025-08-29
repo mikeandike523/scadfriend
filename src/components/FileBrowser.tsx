@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import { Button, Div, Ul, Li } from "style-props-html";
+import { css } from "@emotion/react";
 
 export type FileNode = {
   name: string;
@@ -44,6 +45,11 @@ function FileNodeView({
           background="none"
           border="none"
           padding="4px"
+          css={css`
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+          `}
           onClick={() => onOpen(node.path, node.handle as FileSystemFileHandle)}
         >
           {node.name}
@@ -90,4 +96,3 @@ export default function FileBrowser({
     </Div>
   );
 }
-
