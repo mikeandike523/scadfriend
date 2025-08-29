@@ -17,6 +17,7 @@ import { Button, Div, H1, I, Input, Label, P } from "style-props-html";
 import "./App.css";
 
 import EditorTab from "./components/EditorTab";
+import FileBrowser from "./components/FileBrowser";
 import useEditorTabAgent from "./hooks/useEditorTabAgent";
 import useFSAUnsupported from "./hooks/useFSAUnsupported";
 import { useRegisterOpenSCADLanguage } from "./openscad-lang";
@@ -25,6 +26,11 @@ import { createLabeledAxis, removeAxes } from "./AxisVisualizer";
 import { formatError } from "./utils/serialization";
 import ResizeSvgHelper from "./utils/ResizeSVGHelper";
 import ThreeViewer, { ThreeHandles } from "./components/ThreeViewer";
+import { collectImports } from "./utils/importUtils";
+import {
+  storeDirectoryHandle,
+  getStoredDirectoryHandle,
+} from "./utils/fsaUtils";
 
 const resizeBarSVGHelper = new ResizeSvgHelper({
   arrowHeadWidth: 12,
@@ -119,6 +125,10 @@ export default function App() {
 
   const [windowWidth, setWindowWidth] = useState<number | null>(null);
 
+  const [projectHandle, setProjectHandle] =
+    useState<FileSystemDirectoryHandle | null>(null);
+  const FILE_BROWSER_WIDTH = 200;
+
   useEffect(() => {
     if (editorWidth === 0 && windowWidth) {
       setEditorWidth(Math.floor(windowWidth * 0.5));
@@ -127,6 +137,16 @@ export default function App() {
 
   useEffect(() => {
     setWindowWidth(window.innerWidth);
+  }, []);
+
+  useEffect(() => {
+    getStoredDirectoryHandle().then(async (h) => {
+      if (h) {
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        const perm = await (h as any).queryPermission({ mode: "readwrite" });
+        if (perm === "granted") setProjectHandle(h);
+      }
+    });
   }, []);
 
 
@@ -155,7 +175,6 @@ export default function App() {
 
   const orbitControlsRef = useRef<OrbitControls | null>(null);
   const threeObjectsRef = useRef<ThreeHandles | null>(null);
-  const [threeReady, setThreeReady] = useState(false);
 
 
   useEffect(() => {
@@ -267,6 +286,30 @@ export default function App() {
     }
   };
 
+  const selectProject = async () => {
+    try {
+      const handle = await (window as object as {
+        showDirectoryPicker: () => Promise<FileSystemDirectoryHandle>;
+      }).showDirectoryPicker();
+      const perm = await (handle as object as {
+        requestPermission: (options: { mode: "readwrite" | "read" }) => Promise<string>;
+      }).requestPermission({ mode: "readwrite" });
+      if (perm === "granted") {
+        await storeDirectoryHandle(handle);
+        setProjectHandle(handle);
+      }
+    } catch (err) {
+      console.error(err);
+    }
+  };
+
+  const openFileFromBrowser = async (
+    path: string,
+    handle: FileSystemFileHandle
+  ) => {
+    await editorTabAgent.openFileHandle(handle, path);
+  };
+
   const updateVisibility = useCallback(() => {
     threeObjectsRef.current?.scene?.traverse((child) => {
       if (child instanceof THREE.Mesh && !child.userData.keep) {
@@ -284,7 +327,9 @@ export default function App() {
   const renderPartInWorker = (
     name: string,
     part: OpenSCADPart,
-    backend: "Manifold" | "CGAL"
+    backend: "Manifold" | "CGAL",
+    path: string,
+    extraFiles: Record<string, string>
   ) =>
     new Promise<void>((resolve, reject) => {
       const w = new Worker(new URL("./openscad.worker.ts", import.meta.url), {
@@ -308,7 +353,14 @@ export default function App() {
         w.terminate();
         reject(err);
       };
-      w.postMessage({ command: "render", partName: name, part, backend });
+      w.postMessage({
+        command: "render",
+        partName: name,
+        part,
+        backend,
+        path,
+        extraFiles,
+      });
     });
 
   const renderModel = async (backend: "Manifold" | "CGAL") => {
@@ -330,8 +382,19 @@ export default function App() {
     completedModelRef.current = {};
     log(`Found parts: ${Object.keys(parts).join(", ")}`);
     try {
+      let extraFiles: Record<string, string> = {};
+      if (projectHandle && editorTabAgent.filePath) {
+        extraFiles = await collectImports(projectHandle, editorTabAgent.filePath);
+      }
       for (const [n, p] of Object.entries(parts))
-        if (p.exported) await renderPartInWorker(n, p, backend);
+        if (p.exported)
+          await renderPartInWorker(
+            n,
+            p,
+            backend,
+            editorTabAgent.filePath || "input.scad",
+            extraFiles
+          );
       setRenderedAtLeastOnce(true);
       log("Done");
       setPartSettings({ ...partSettings });
@@ -359,222 +422,243 @@ export default function App() {
 
   return (
     <>
-      <div
-        style={{
-          width: "100vw",
-          height: "100vh",
-          overflow: "hidden",
-          display: "grid",
-          gridTemplateColumns: "auto auto auto",
-        }}
-      >
-        <div
-          ref={editorContainerRef}
-          style={{
-            height: "100%",
-            overflow: "auto",
-            background: "#f5f5f5",
-            padding: "8px",
-            width: `${editorWidth}px`,
-          }}
-        >
-          <EditorTab agent={editorTabAgent} containerRef={editorContainerRef} />
-        </div>
-        <div style={resizeBarStyle} onMouseDown={startResizing} />
-        <div
-          className="viewer-container"
-          ref={viewerContainerRef}
-          style={{
-            width: `calc(100vw - ${editorWidth}px - 16px)`,
-            height: "100%",
-            display: "grid",
-            gridTemplateRows: "auto 1.5fr 1fr",
-            gridTemplateColumns: "1fr",
-            overflow: "hidden",
-          }}
-        >
-          <Div
-            width={`calc(100vw - ${editorWidth}px - 16px)`}
-            display="flex"
-            gap="8px"
-            padding="8px"
-          >
-            <Button
-              disabled={isProcessing}
-              flex={1}
-              fontSize="150%"
-              onClick={() => renderModel("Manifold")}
-            >
-              Preview
-            </Button>
-            <Button
-              disabled={isProcessing}
-              flex={1}
-              fontSize="150%"
-              onClick={() => renderModel("CGAL")}
-            >
-              Render
-            </Button>
-          </Div>
-          <Div
-            width={`calc(100vw - ${editorWidth}px - 16px)`}
-            display="grid"
-            gridTemplateColumns="1.5fr 3fr"
-            height="100%"
-            overflow="hidden"
-          >
-            <Div
-              background="white"
-              padding="8px"
-              display="flex"
-              flexDirection="column"
-              gap="8px"
-            >
-              {Object.keys(partSettings).length ? (
-                Object.entries(partSettings).map(([name, s], i) => (
-                  <Div key={i} display="flex" alignItems="center" gap="0.7em">
-                    <Label
-                      display="flex"
-                      alignItems="center"
-                      gap="0.7em"
-                      color={!s.exported ? "#666" : undefined}
-                    >
-                      <Input
-                        type="checkbox"
-                        checked={s.visible}
-                        onChange={() => {
-                          s.visible = !s.visible;
-                          setPartSettings({ ...partSettings });
-                        }}
-                      />
-                      {s.exported ? name : `${name}(ignored)`}
-                    </Label>
-                    {completedModelRef.current[name]?.stl && (
-                      <Button
-                        width="1.25rem"
-                        height="1.25rem"
-                        onClick={() => downloadPart(name)}
-                      >
-                        <FaFileDownload style={{ fontSize: "0.75rem" }} />
-                      </Button>
-                    )}
-                  </Div>
-                ))
-              ) : (
-                <I>No parts yet.</I>
-              )}
-            </Div>
-            <Div background="#aaa" position="relative">
-              <ThreeViewer
-                handleRef={threeObjectsRef}
-                controlsRef={orbitControlsRef}
-                onReady={() => setThreeReady(true)}
-              />
-              <Div
-                position="absolute"
-                top={0}
-                left={0}
-                right={0}
-                bottom={0}
-                display="flex"
-                alignItems="center"
-                justifyContent="center"
-                pointerEvents={isProcessing ? "auto" : "none"}
-                opacity={isProcessing ? 1 : 0}
-                transition="opacity .5s"
-              >
-                <Div
-                  width="48px"
-                  height="48px"
-                  css={css`
-                    border-radius: 50%;
-                    border: 4px solid blue;
-                    border-top: 4px solid transparent;
-                    animation: ${spinnerAnimation} 2s linear infinite;
-                  `}
-                />
-              </Div>
-              <Div
-                position="absolute"
-                top={0}
-                left={0}
-                right={0}
-                bottom={0}
-                display="flex"
-                flexDirection="column"
-                alignItems="center"
-                justifyContent="center"
-                pointerEvents={
-                  renderedAtLeastOnce || isProcessing ? "none" : "auto"
-                }
-                opacity={renderedAtLeastOnce || isProcessing ? 0 : 1}
-                transition="opacity .5s"
-              >
-                <H1 color="darkblue" textAlign="center">
-                  Nothing to show.
-                </H1>
-                <H1 color="darkblue" textAlign="center">
-                  Press "Render" to start.
-                </H1>
-              </Div>
-              <Div
-                position="absolute"
-                bottom={0}
-                right={0}
-                display="flex"
-                gap="8px"
-                padding="8px"
-              >
-                <Button
-                  onClick={goToDefaultView}
-                  width="2.5rem"
-                  height="2.5rem"
-                  borderRadius="50%"
-                >
-                  <FaHome style={{ fontSize: "1.5rem" }} />
-                </Button>
-              </Div>
-            </Div>
-          </Div>
-          <Div
-            ref={consoleDivRef}
-            overflow="auto"
-            whiteSpace="pre-wrap"
-            background="darkgreen"
-            color="white"
-            fontFamily="'Fira Code', monospace"
-            width={`calc(100vw - ${editorWidth}px - 16px)`}
-          >
-            {messages.join("\n") + "\n"}
-          </Div>
-        </div>
+      {!projectHandle ? (
         <Div
-          position="fixed"
           width="100vw"
           height="100vh"
-          zIndex={9999}
-          background="black"
-          display={fsaUnsupported ? "flex" : "none"}
+          display="flex"
           alignItems="center"
           justifyContent="center"
         >
-          <Div
-            background="white"
-            padding="8px"
-            display="flex"
-            flexDirection="column"
-            alignItems="stretch"
-          >
-            <H1 color="red" textAlign="center">
-              Your browser is too old!
-            </H1>
-            <P textAlign="center">
-              The File System Access API isn't supported.
-            </P>
-            <P textAlign="center">Upgrade to a modern browser.</P>
-          </Div>
+          <Button onClick={selectProject}>Select Project Folder</Button>
         </Div>
-      </div>
+      ) : (
+        <div
+          style={{
+            width: "100vw",
+            height: "100vh",
+            overflow: "hidden",
+            display: "flex",
+          }}
+        >
+          <div
+            style={{
+              width: FILE_BROWSER_WIDTH,
+              height: "100%",
+              overflow: "auto",
+              background: "#eee",
+            }}
+          >
+            <FileBrowser
+              rootHandle={projectHandle}
+              onOpenFile={openFileFromBrowser}
+            />
+          </div>
+          <div
+            ref={editorContainerRef}
+            style={{
+              height: "100%",
+              overflow: "auto",
+              background: "#f5f5f5",
+              padding: "8px",
+              width: `${editorWidth}px`,
+            }}
+          >
+            <EditorTab
+              agent={editorTabAgent}
+              containerRef={editorContainerRef}
+            />
+          </div>
+          <div style={resizeBarStyle} onMouseDown={startResizing} />
+          <div
+            className="viewer-container"
+            ref={viewerContainerRef}
+            style={{
+              flex: 1,
+              height: "100%",
+              display: "grid",
+              gridTemplateRows: "auto 1.5fr 1fr",
+              gridTemplateColumns: "1fr",
+              overflow: "hidden",
+            }}
+          >
+            <Div width="100%" display="flex" gap="8px" padding="8px">
+              <Button
+                disabled={isProcessing}
+                flex={1}
+                fontSize="150%"
+                onClick={() => renderModel("Manifold")}
+              >
+                Preview
+              </Button>
+              <Button
+                disabled={isProcessing}
+                flex={1}
+                fontSize="150%"
+                onClick={() => renderModel("CGAL")}
+              >
+                Render
+              </Button>
+            </Div>
+            <Div
+              width="100%"
+              display="grid"
+              gridTemplateColumns="1.5fr 3fr"
+              height="100%"
+              overflow="hidden"
+            >
+              <Div
+                background="white"
+                padding="8px"
+                display="flex"
+                flexDirection="column"
+                gap="8px"
+              >
+                {Object.keys(partSettings).length ? (
+                  Object.entries(partSettings).map(([name, s], i) => (
+                    <Div key={i} display="flex" alignItems="center" gap="0.7em">
+                      <Label
+                        display="flex"
+                        alignItems="center"
+                        gap="0.7em"
+                        color={!s.exported ? "#666" : undefined}
+                      >
+                        <Input
+                          type="checkbox"
+                          checked={s.visible}
+                          onChange={() => {
+                            s.visible = !s.visible;
+                            setPartSettings({ ...partSettings });
+                          }}
+                        />
+                        {s.exported ? name : `${name}(ignored)`}
+                      </Label>
+                      {completedModelRef.current[name]?.stl && (
+                        <Button
+                          width="1.25rem"
+                          height="1.25rem"
+                          onClick={() => downloadPart(name)}
+                        >
+                          <FaFileDownload style={{ fontSize: "0.75rem" }} />
+                        </Button>
+                      )}
+                    </Div>
+                  ))
+                ) : (
+                  <I>No parts yet.</I>
+                )}
+              </Div>
+              <Div background="#aaa" position="relative">
+                <ThreeViewer
+                  handleRef={threeObjectsRef}
+                  controlsRef={orbitControlsRef}
+                />
+                <Div
+                  position="absolute"
+                  top={0}
+                  left={0}
+                  right={0}
+                  bottom={0}
+                  display="flex"
+                  alignItems="center"
+                  justifyContent="center"
+                  pointerEvents={isProcessing ? "auto" : "none"}
+                  opacity={isProcessing ? 1 : 0}
+                  transition="opacity .5s"
+                >
+                  <Div
+                    width="48px"
+                    height="48px"
+                    css={css`
+                      border-radius: 50%;
+                      border: 4px solid blue;
+                      border-top: 4px solid transparent;
+                      animation: ${spinnerAnimation} 2s linear infinite;
+                    `}
+                  />
+                </Div>
+                <Div
+                  position="absolute"
+                  top={0}
+                  left={0}
+                  right={0}
+                  bottom={0}
+                  display="flex"
+                  flexDirection="column"
+                  alignItems="center"
+                  justifyContent="center"
+                  pointerEvents={
+                    renderedAtLeastOnce || isProcessing ? "none" : "auto"
+                  }
+                  opacity={renderedAtLeastOnce || isProcessing ? 0 : 1}
+                  transition="opacity .5s"
+                >
+                  <H1 color="darkblue" textAlign="center">
+                    Nothing to show.
+                  </H1>
+                  <H1 color="darkblue" textAlign="center">
+                    Press "Render" to start.
+                  </H1>
+                </Div>
+                <Div
+                  position="absolute"
+                  bottom={0}
+                  right={0}
+                  display="flex"
+                  gap="8px"
+                  padding="8px"
+                >
+                  <Button
+                    onClick={goToDefaultView}
+                    width="2.5rem"
+                    height="2.5rem"
+                    borderRadius="50%"
+                  >
+                    <FaHome style={{ fontSize: "1.5rem" }} />
+                  </Button>
+                </Div>
+              </Div>
+            </Div>
+            <Div
+              ref={consoleDivRef}
+              overflow="auto"
+              whiteSpace="pre-wrap"
+              background="darkgreen"
+              color="white"
+              fontFamily="'Fira Code', monospace"
+              width="100%"
+            >
+              {messages.join("\n") + "\n"}
+            </Div>
+          </div>
+        </div>
+      )}
+      <Div
+        position="fixed"
+        width="100vw"
+        height="100vh"
+        zIndex={9999}
+        background="black"
+        display={fsaUnsupported ? "flex" : "none"}
+        alignItems="center"
+        justifyContent="center"
+      >
+        <Div
+          background="white"
+          padding="8px"
+          display="flex"
+          flexDirection="column"
+          alignItems="stretch"
+        >
+          <H1 color="red" textAlign="center">
+            Your browser is too old!
+          </H1>
+          <P textAlign="center">
+            The File System Access API isn't supported.
+          </P>
+          <P textAlign="center">Upgrade to a modern browser.</P>
+        </Div>
+      </Div>
     </>
   );
 }

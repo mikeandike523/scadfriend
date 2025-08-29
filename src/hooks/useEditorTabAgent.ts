@@ -10,8 +10,6 @@ import {
 
 import { OnMount } from "@monaco-editor/react";
 import {
-  openExistingFile as fsaOpenExistingFile,
-  reopenLastFile,
   saveFile,
   storeFileHandle,
   deleteStoredFileHandle,
@@ -43,14 +41,18 @@ export interface EditorTabAgent {
   setLastLoadedCode: Dispatch<SetStateAction<string | null>>;
   filename: string | null;
   setFilename: Dispatch<SetStateAction<string | null>>;
+  filePath: string | null;
+  setFilePath: Dispatch<SetStateAction<string | null>>;
   dirty: boolean;
   setDirty: Dispatch<SetStateAction<boolean>>;
   fileIsLoaded: boolean;
   setFileIsLoaded: Dispatch<SetStateAction<boolean>>;
-  createNewFile: (name?: string, content?: string) => void;
   storeEditor: (editor: MonacoEditorInterface) => void;
   computeDirty: (newCode: string) => void;
-  openExistingFile: () => Promise<void>;
+  openFileHandle: (
+    handle: FileSystemFileHandle,
+    path: string
+  ) => Promise<void>;
   saveCurrentFile: () => Promise<void>;
   closeFile: () => Promise<void>;
   /** Force the Monaco editor to relayout */
@@ -75,6 +77,7 @@ export default function useEditorTabAgent({
   const [dirty, setDirty] = useState(false);
   const [lastLoadedCode, setLastLoadedCode] = useState<string | null>(null);
   const [fileIsLoaded, setFileIsLoaded] = useState(false);
+  const [filePath, setFilePath] = useState<string | null>(null);
   const editorRef = useRef<MonacoEditorInterface | null>(null);
   const [editorLoaded, setEditorLoaded] = useState(false);
 
@@ -100,59 +103,25 @@ export default function useEditorTabAgent({
     }
   }
 
-  const createNewFile = (name?: string, content?: string) => {
-    // TODO: If dirty warn before purging old content and creating new
-    // We can leave this out for now
-    setIsNewFile(true);
-    setCode("");
-    setFilename(name ?? "Untitled.scad");
-    setLastLoadedCode(null);
-    setDirty(typeof content === "string" && content.trim() !== "");
-    setFileIsLoaded(false);
-    editorRef.current?.setValue(content ?? "");
-    fileRef.current = null;
-  };
-
   const storeEditor = (editor: MonacoEditorInterface) => {
     editorRef.current = editor;
   };
-
-  const checkForExistingFile = useCallback(
-    async function checkForExistingFile() {
-      if (!editorLoaded) return;
-      const result = await reopenLastFile();
-      if (result) {
-        const { fileHandle, content } = result;
-        fileRef.current = fileHandle;
-        setCode(content);
-        setFilename(fileHandle.name);
-        setLastLoadedCode(content);
-        setDirty(false);
-        setFileIsLoaded(true);
-        setIsNewFile(false);
-        editorRef.current?.setValue(content);
-      }
-    },
-    [setCode, editorLoaded]
-  );
-  useEffect(() => {
-    checkForExistingFile();
-  }, [checkForExistingFile]);
-
-  const openExistingFile = async () => {
-    const result = await fsaOpenExistingFile();
-    if (result) {
-      const { fileHandle, content } = result;
-      fileRef.current = fileHandle;
-      setCode(content);
-      setFilename(fileHandle.name);
-      setLastLoadedCode(content);
-      setDirty(false);
-      setFileIsLoaded(true);
-      setIsNewFile(false);
-      editorRef.current?.setValue(content);
-      await storeFileHandle(fileHandle);
-    }
+  const openFileHandle = async (
+    handle: FileSystemFileHandle,
+    path: string
+  ) => {
+    const file = await handle.getFile();
+    const content = await file.text();
+    fileRef.current = handle;
+    setCode(content);
+    setFilename(handle.name);
+    setLastLoadedCode(content);
+    setDirty(false);
+    setFileIsLoaded(true);
+    setIsNewFile(false);
+    setFilePath(path);
+    editorRef.current?.setValue(content);
+    await storeFileHandle(handle);
   };
 
   const saveCurrentFile = useCallback(async () => {
@@ -178,6 +147,7 @@ export default function useEditorTabAgent({
     setDirty(false);
     setFileIsLoaded(false);
     setIsNewFile(false);
+     setFilePath(null);
     fileRef.current = null;
     editorRef.current?.setValue("");
     await deleteStoredFileHandle();
@@ -229,13 +199,14 @@ export default function useEditorTabAgent({
     setCode,
     filename,
     setFilename,
+    filePath,
+    setFilePath,
     setDirty,
     fileIsLoaded,
     setFileIsLoaded,
-    createNewFile,
     storeEditor,
     computeDirty,
-    openExistingFile,
+    openFileHandle,
     saveCurrentFile,
     closeFile,
     layoutEditor,

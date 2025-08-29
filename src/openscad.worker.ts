@@ -23,6 +23,8 @@ interface RenderRequest {
   backend?: Backend;
   fonts?: boolean;
   mcad?: boolean;
+  path: string;
+  extraFiles?: Record<string, string>;
 }
 
 interface LogMessage {
@@ -119,6 +121,27 @@ async function addSFLibs(instance: OpenSCAD, paths: string[]) {
   }
 }
 
+function writeFileWithDirs(fs: FS, path: string, content: string) {
+  const segments = path.split("/").filter(Boolean);
+  let current = "";
+  for (let i = 0; i < segments.length - 1; i++) {
+    current += "/" + segments[i];
+    try {
+      fs.mkdir(current);
+    } catch {
+      /* already exists */
+    }
+  }
+  fs.writeFile(path, content);
+}
+
+function addExtraFiles(fs: FS, files?: Record<string, string>) {
+  if (!files) return;
+  for (const [p, c] of Object.entries(files)) {
+    writeFileWithDirs(fs, "/" + p, c);
+  }
+}
+
 // Manifold:  Ultra Fast
 // Works in most cases perfectly
 // Good for render
@@ -146,6 +169,8 @@ self.onmessage = async (event: MessageEvent<RenderRequest>) => {
     backend = "Manifold",
     fonts = true,
     mcad = true,
+    path,
+    extraFiles,
   } = data; // Default to Manifold if not specified
 
   try {
@@ -163,7 +188,8 @@ self.onmessage = async (event: MessageEvent<RenderRequest>) => {
     sendLog(partName, "OpenSCAD initialized.");
 
     sendLog(partName, "Writing input file...");
-    instance.FS.writeFile("/input.scad", part.ownSourceCode);
+    addExtraFiles(instance.FS as FS, extraFiles);
+    writeFileWithDirs(instance.FS as FS, "/" + path, part.ownSourceCode);
 
     console.log(formatWithLineNumbers(part.ownSourceCode));
 
@@ -171,7 +197,7 @@ self.onmessage = async (event: MessageEvent<RenderRequest>) => {
 
     sendLog(partName, `Performing render with ${backend} backend...`);
     const args = [
-      "/input.scad",
+      "/" + path,
       "--viewall",
       "--autocenter",
       "--render",
