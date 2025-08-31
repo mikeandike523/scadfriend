@@ -421,16 +421,35 @@ export default function App() {
     }
   };
 
-  const downloadPart = (name: string) => {
+  const downloadPart = async (name: string) => {
     const part = completedModelRef.current[name];
-    if (!part?.stl) return alert(`${name} missing`);
-    const url = URL.createObjectURL(new Blob([part.stl]));
-    const a = document.createElement("a");
-    a.href = url;
-    a.download = `${name}.stl`;
-    document.body.appendChild(a);
-    a.click();
-    document.body.removeChild(a);
+    if (!part?.stl) {
+      return alert(`${name} missing`);
+    }
+    // If File System Access API is unsupported or no project handle, fallback to browser download
+    if (fsaUnsupported || !projectHandle) {
+      const url = URL.createObjectURL(new Blob([part.stl]));
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = `${name}.stl`;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      return;
+    }
+    try {
+      const exportsDir = await projectHandle.getDirectoryHandle("exports", {
+        create: true,
+      });
+      const fileHandle = await exportsDir.getFileHandle(`${name}.stl`, {
+        create: true,
+      });
+      const writable = await fileHandle.createWritable();
+      await writable.write(part.stl);
+      await writable.close();
+    } catch (err) {
+      alert(`Saving export failed: ${formatError(err)}`);
+    }
   };
 
   return (
