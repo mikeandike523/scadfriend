@@ -30,6 +30,7 @@ import { collectImports } from "./utils/importUtils";
 import {
   storeDirectoryHandle,
   getStoredDirectoryHandle,
+  clearStoredDirectoryHandle,
 } from "./utils/fsaUtils";
 
 const resizeBarSVGHelper = new ResizeSvgHelper({
@@ -310,10 +311,13 @@ export default function App() {
   };
 
   /**
-   * Close the current project and return to initial state
+   * Close the current project, clear stored handle, and return to initial state.
    */
   const closeProject = () => {
     setProjectHandle(null);
+    clearStoredDirectoryHandle().catch((err) =>
+      console.error("Failed to clear stored directory handle:", err)
+    );
   };
 
   const openFileFromBrowser = async (

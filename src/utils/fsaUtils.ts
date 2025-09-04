@@ -287,3 +287,15 @@ export async function getStoredDirectoryHandle(): Promise<FileSystemDirectoryHan
     return null;
   }
 }
+
+/**
+ * Clear the stored directory handle so it won't auto-open on next load.
+ */
+export async function clearStoredDirectoryHandle(): Promise<void> {
+  return new Promise((resolve, reject) => {
+    const request = window.indexedDB.deleteDatabase("FileHandleDB");
+    request.onsuccess = () => resolve();
+    request.onerror = () => reject(request.error);
+    request.onblocked = () => console.warn("clearStoredDirectoryHandle: deleteDatabase blocked");
+  });
+}
