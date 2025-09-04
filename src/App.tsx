@@ -418,6 +418,7 @@ export default function App() {
       updateThreeScene();
 
     } catch (err) {
+      console.error(err)
       alert("Rendering failed");
       log(`Fail: ${formatError(err)}`);
     } finally {
