@@ -31,6 +31,7 @@ import {
   storeDirectoryHandle,
   getStoredDirectoryHandle,
   clearStoredDirectoryHandle,
+  ensureProjectConfigDirs,
 } from "./utils/fsaUtils";
 
 const resizeBarSVGHelper = new ResizeSvgHelper({
@@ -146,7 +147,14 @@ export default function App() {
       if (h) {
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
         const perm = await (h as any).queryPermission({ mode: "readwrite" });
-        if (perm === "granted") setProjectHandle(h);
+        if (perm === "granted") {
+          try {
+            await ensureProjectConfigDirs(h);
+          } catch (err) {
+            console.error("Failed to ensure project config dirs:", err);
+          }
+          setProjectHandle(h);
+        }
       }
     });
   }, []);
@@ -302,6 +310,7 @@ export default function App() {
         requestPermission: (options: { mode: "readwrite" | "read" }) => Promise<string>;
       }).requestPermission({ mode: "readwrite" });
       if (perm === "granted") {
+        await ensureProjectConfigDirs(handle);
         await storeDirectoryHandle(handle);
         setProjectHandle(handle);
       }

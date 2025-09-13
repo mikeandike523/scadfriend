@@ -47,6 +47,17 @@ export async function storeFileHandle(
   });
 }
 
+/**
+ * Ensure the .scadfriend directory and its subdirectories exist in the project root.
+ */
+export async function ensureProjectConfigDirs(
+  handle: FileSystemDirectoryHandle
+): Promise<void> {
+  const base = await handle.getDirectoryHandle('.scadfriend', { create: true });
+  await base.getDirectoryHandle('settings', { create: true });
+  await base.getDirectoryHandle('state', { create: true });
+}
+
 export async function getStoredFileHandle(): Promise<FileSystemFileHandle | null> {
   try {
     const db = await openDB();
