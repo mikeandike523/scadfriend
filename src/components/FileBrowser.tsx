@@ -28,13 +28,13 @@ async function readDirectory(
   return nodes;
 }
 
-function FileNodeView({
-  node,
-  onOpen,
-}: {
+interface FileNodeViewProps {
   node: FileNode;
   onOpen: (path: string, handle: FileSystemFileHandle) => void;
-}) {
+  expandedDirs: Set<string>;
+  toggleDir: (path: string) => void;
+}
+function FileNodeView({ node, onOpen, expandedDirs, toggleDir }: FileNodeViewProps) {
   if (node.kind === "file") {
     return (
       <Li>
@@ -57,20 +57,68 @@ function FileNodeView({
       </Li>
     );
   }
+  const isExpanded = expandedDirs.has(node.path);
   return (
     <Li>
-      <Div fontWeight="bold" padding="4px 0">
-        {node.name}
+      <Div
+        css={css`
+          display: flex;
+          align-items: center;
+          padding: 4px 0;
+        `}
+      >
+        {node.children && node.children.length > 0 ? (
+          <Button
+            background="none"
+            border="none"
+            padding="0 4px"
+            onClick={() => toggleDir(node.path)}
+          >
+            {isExpanded ? "▼" : "▶"}
+          </Button>
+        ) : (
+          <Div width="16px" />
+        )}
+        <Div
+          fontWeight="bold"
+          userSelect="none"
+          cursor={node.children && node.children.length > 0 ? "pointer" : "default"}
+          onClick={() => node.children && node.children.length > 0 && toggleDir(node.path)}
+        >
+          {node.name}
+        </Div>
       </Div>
-      {node.children && node.children.length > 0 && (
+      {isExpanded && node.children && node.children.length > 0 && (
         <Ul marginLeft="16px">
           {node.children.map((child) => (
-            <FileNodeView key={child.path} node={child} onOpen={onOpen} />
+            <FileNodeView
+              key={child.path}
+              node={child}
+              onOpen={onOpen}
+              expandedDirs={expandedDirs}
+              toggleDir={toggleDir}
+            />
           ))}
         </Ul>
       )}
     </Li>
   );
+}
+
+// collect all existing directory paths in the tree
+function collectDirPaths(nodes: FileNode[]): Set<string> {
+  const paths = new Set<string>();
+  for (const node of nodes) {
+    if (node.kind === "directory") {
+      paths.add(node.path);
+      if (node.children) {
+        for (const childPath of collectDirPaths(node.children)) {
+          paths.add(childPath);
+        }
+      }
+    }
+  }
+  return paths;
 }
 
 export default function FileBrowser({
@@ -81,16 +129,50 @@ export default function FileBrowser({
   onOpenFile: (path: string, handle: FileSystemFileHandle) => void;
 }) {
   const [tree, setTree] = useState<FileNode[]>([]);
+  const [expandedDirs, setExpandedDirs] = useState<Set<string>>(new Set());
 
+  // read directory tree when root changes
   useEffect(() => {
     readDirectory(rootHandle).then(setTree);
   }, [rootHandle]);
+
+  // garbage collect stale expanded entries when tree updates
+  useEffect(() => {
+    const validDirs = collectDirPaths(tree);
+    setExpandedDirs((prev) => {
+      const next = new Set<string>();
+      for (const path of prev) {
+        if (validDirs.has(path)) {
+          next.add(path);
+        }
+      }
+      return next;
+    });
+  }, [tree]);
+
+  const toggleDir = (path: string) => {
+    setExpandedDirs((prev) => {
+      const next = new Set(prev);
+      if (next.has(path)) {
+        next.delete(path);
+      } else {
+        next.add(path);
+      }
+      return next;
+    });
+  };
 
   return (
     <Div padding="8px" overflow="auto" height="100%">
       <Ul listStyleType="none" padding="0" margin="0">
         {tree.map((node) => (
-          <FileNodeView key={node.path} node={node} onOpen={onOpenFile} />
+          <FileNodeView
+            key={node.path}
+            node={node}
+            onOpen={onOpenFile}
+            expandedDirs={expandedDirs}
+            toggleDir={toggleDir}
+          />
         ))}
       </Ul>
     </Div>
