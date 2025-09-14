@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { Button, Div, Ul, Li } from "style-props-html";
 import { css } from "@emotion/react";
+import { loadFileExplorerState, saveFileExplorerState } from "../utils/fsaUtils";
 
 export type FileNode = {
   name: string;
@@ -131,24 +132,22 @@ export default function FileBrowser({
   const [tree, setTree] = useState<FileNode[]>([]);
   const [expandedDirs, setExpandedDirs] = useState<Set<string>>(new Set());
 
-  // read directory tree when root changes
+  // initialize directory tree and expanded state from disk
   useEffect(() => {
-    readDirectory(rootHandle).then(setTree);
+    async function init() {
+      const nodes = await readDirectory(rootHandle);
+      setTree(nodes);
+      const { expanded } = await loadFileExplorerState(rootHandle);
+      const validDirs = collectDirPaths(nodes);
+      setExpandedDirs(new Set(expanded.filter((p) => validDirs.has(p))));
+    }
+    init();
   }, [rootHandle]);
 
-  // garbage collect stale expanded entries when tree updates
+  // persist expanded state on changes
   useEffect(() => {
-    const validDirs = collectDirPaths(tree);
-    setExpandedDirs((prev) => {
-      const next = new Set<string>();
-      for (const path of prev) {
-        if (validDirs.has(path)) {
-          next.add(path);
-        }
-      }
-      return next;
-    });
-  }, [tree]);
+    saveFileExplorerState(rootHandle, Array.from(expandedDirs));
+  }, [expandedDirs, rootHandle]);
 
   const toggleDir = (path: string) => {
     setExpandedDirs((prev) => {

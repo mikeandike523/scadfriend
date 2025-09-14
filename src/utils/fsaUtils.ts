@@ -55,7 +55,18 @@ export async function ensureProjectConfigDirs(
 ): Promise<void> {
   const base = await handle.getDirectoryHandle('.scadfriend', { create: true });
   await base.getDirectoryHandle('settings', { create: true });
-  await base.getDirectoryHandle('state', { create: true });
+  const stateDir = await base.getDirectoryHandle('state', { create: true });
+  // initialize file-explorer state file if it does not exist
+  try {
+    // check if state file exists
+    await stateDir.getFileHandle('file-explorer.json', { create: false });
+  } catch {
+    // create with default expanded state
+    const fh = await stateDir.getFileHandle('file-explorer.json', { create: true });
+    const w = await fh.createWritable();
+    await w.write(JSON.stringify({ expanded: [] }, null, 2));
+    await w.close();
+  }
 }
 
 export async function getStoredFileHandle(): Promise<FileSystemFileHandle | null> {
@@ -296,6 +307,46 @@ export async function getStoredDirectoryHandle(): Promise<FileSystemDirectoryHan
   } catch (error) {
     console.error("Error retrieving stored directory handle:", error);
     return null;
+  }
+}
+
+/**
+ * Load the file-explorer state stored in .scadfriend/state/file-explorer.json
+ * Returns an object with expanded paths array.
+ */
+export async function loadFileExplorerState(
+  root: FileSystemDirectoryHandle
+): Promise<{ expanded: string[] }> {
+  try {
+    const base = await root.getDirectoryHandle('.scadfriend');
+    const stateDir = await base.getDirectoryHandle('state');
+    const fh = await stateDir.getFileHandle('file-explorer.json');
+    const file = await fh.getFile();
+    const text = await file.text();
+    const data = JSON.parse(text);
+    return { expanded: Array.isArray(data.expanded) ? data.expanded : [] };
+  } catch (error) {
+    console.error('Error loading file-explorer state:', error);
+    return { expanded: [] };
+  }
+}
+
+/**
+ * Save the file-explorer state to .scadfriend/state/file-explorer.json
+ */
+export async function saveFileExplorerState(
+  root: FileSystemDirectoryHandle,
+  expanded: string[]
+): Promise<void> {
+  try {
+    const base = await root.getDirectoryHandle('.scadfriend');
+    const stateDir = await base.getDirectoryHandle('state');
+    const fh = await stateDir.getFileHandle('file-explorer.json', { create: true });
+    const w = await fh.createWritable();
+    await w.write(JSON.stringify({ expanded }, null, 2));
+    await w.close();
+  } catch (error) {
+    console.error('Error saving file-explorer state:', error);
   }
 }
 
