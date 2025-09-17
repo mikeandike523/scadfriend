@@ -24,7 +24,10 @@ interface RenderRequest {
   fonts?: boolean;
   mcad?: boolean;
   path: string;
-  extraFiles?: Record<string, string>;
+  /**
+   * Map of project-relative paths to file contents. .scad files as string, .stl files as Uint8Array.
+   */
+  extraFiles?: Record<string, string | Uint8Array>;
 }
 
 interface LogMessage {
@@ -121,7 +124,7 @@ async function addSFLibs(instance: OpenSCAD, paths: string[]) {
   }
 }
 
-function writeFileWithDirs(fs: FS, path: string, content: string) {
+function writeFileWithDirs(fs: FS, path: string, content: string | Uint8Array) {
   const segments = path.split("/").filter(Boolean);
   let current = "";
   for (let i = 0; i < segments.length - 1; i++) {
@@ -132,10 +135,15 @@ function writeFileWithDirs(fs: FS, path: string, content: string) {
       /* already exists */
     }
   }
-  fs.writeFile(path, content);
+  // Write text or binary content
+  fs.writeFile(path, content as any);
 }
 
-function addExtraFiles(fs: FS, files?: Record<string, string>) {
+/**
+ * Write extra project files into the OpenSCAD VM file system.
+ * Supports .scad files as strings and .stl files as Uint8Array binaries.
+ */
+function addExtraFiles(fs: FS, files?: Record<string, string | Uint8Array>) {
   if (!files) return;
   for (const [p, c] of Object.entries(files)) {
     writeFileWithDirs(fs, "/" + p, c);

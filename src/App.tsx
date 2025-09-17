@@ -408,7 +408,8 @@ export default function App() {
     completedModelRef.current = {};
     log(`Found parts: ${Object.keys(parts).join(", ")}`);
     try {
-      let extraFiles: Record<string, string> = {};
+      // Collect .scad and .stl imports to upload into the worker VM
+      let extraFiles: Record<string, string | Uint8Array> = {};
       if (projectHandle && editorTabAgent.filePath) {
         extraFiles = await collectImports(projectHandle, editorTabAgent.filePath);
       }

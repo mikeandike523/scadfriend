@@ -1,3 +1,6 @@
+/**
+ * Extracts OpenSCAD include/use imports of other .scad files.
+ */
 export function extractImports(code: string): string[] {
   const regex = /(include|use)\s*<([^>]+)>/g;
   const imports: string[] = [];
@@ -21,6 +24,19 @@ export function resolveImportPath(currentPath: string, importPath: string): stri
   return stack.join("/");
 }
 
+/**
+ * Extracts STL file imports via import("*.stl") calls in OpenSCAD code.
+ */
+export function extractStlImports(code: string): string[] {
+  const regex = /import\s*\(\s*["']([^"']+\.stl)["']\s*\)/g;
+  const imports: string[] = [];
+  let match: RegExpExecArray | null;
+  while ((match = regex.exec(code)) !== null) {
+    imports.push(match[1]);
+  }
+  return imports;
+}
+
 async function getFileHandleFromPath(
   root: FileSystemDirectoryHandle,
   path: string
@@ -33,16 +49,21 @@ async function getFileHandleFromPath(
   return await dir.getFileHandle(parts[parts.length - 1]);
 }
 
+/**
+ * Collects imported files (both .scad and .stl) recursively from a root directory.
+ * Returns a map from relative path to file content (string for .scad, Uint8Array for .stl).
+ */
 export async function collectImports(
   root: FileSystemDirectoryHandle,
   filePath: string,
   visited = new Set<string>()
-): Promise<Record<string, string>> {
+): Promise<Record<string, string | Uint8Array>> {
   const handle = await getFileHandleFromPath(root, filePath);
   const file = await handle.getFile();
   const text = await file.text();
+  const result: Record<string, string | Uint8Array> = {};
+  // Handle .scad include/use imports
   const imports = extractImports(text);
-  const result: Record<string, string> = {};
   for (const imp of imports) {
     const resolved = resolveImportPath(filePath, imp);
     if (visited.has(resolved)) continue;
@@ -54,6 +75,17 @@ export async function collectImports(
     const deeper = await collectImports(root, resolved, visited);
     Object.assign(result, deeper);
   }
+  // Handle .stl binary imports via import("*.stl")
+  const stlImps = extractStlImports(text);
+  for (const imp of stlImps) {
+    const resolved = resolveImportPath(filePath, imp);
+    if (visited.has(resolved)) continue;
+    visited.add(resolved);
+    const childHandle = await getFileHandleFromPath(root, resolved);
+    const childFile = await childHandle.getFile();
+    const buf = new Uint8Array(await childFile.arrayBuffer());
+    result[resolved] = buf;
+    // No deeper imports from binary files
+  }
   return result;
 }
-
