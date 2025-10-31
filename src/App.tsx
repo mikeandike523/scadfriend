@@ -427,6 +427,7 @@ export default function App() {
       if (projectHandle && editorTabAgent.filePath) {
         extraFiles = await collectImports(projectHandle, editorTabAgent.filePath);
       }
+      console.log("extraFiles",extraFiles);
       for (const [n, p] of Object.entries(parts))
         if (p.exported)
           await renderPartInWorker(
