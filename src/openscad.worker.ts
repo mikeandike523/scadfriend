@@ -1,7 +1,7 @@
 import { type FS } from "./openscad";
 import oscadUtil from "./oscadUtil";
 import { type OpenSCAD } from "./openscad";
-import { formatWithLineNumbers } from "./utils/formatting";
+
 
 import {
   SerializableObject,
