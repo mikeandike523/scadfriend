@@ -101,3 +101,54 @@ module two_point_box(A, B) {
         cube(size, center = false);
 }
 
+// two_point_cylinder.scad (v2)
+// Place a cylinder so its endcap centers lie on p0 and p1.
+//
+// p0, p1 : 3D points [x,y,z] giving the exact endcap center positions
+// d      : cylinder diameter
+// extra0 : extra length added *behind p0* along the -local-Z direction (toward p0 side)
+// extra1 : extra length added *past p1* along the +local-Z direction (toward p1 side)
+// $fn    : facet count (optional)
+//
+// Notes:
+// - Set extra0=0, extra1>0 to "push through" past p1 only (typical flush-cut boolean).
+// - Set extra1=0, extra0>0 to extend only behind p0.
+// - If you want symmetric overcut, set extra0=extra1=h_extra.
+//
+module two_point_cylinder(p0, p1, d, extra0=0, extra1=0, $fn=48) {
+    // Small numeric helpers
+    function _clamp(x, a, b) = min(max(x, a), b);
+    EPS = 1e-9;
+
+    // Vector math
+    v   = [p1[0]-p0[0], p1[1]-p0[1], p1[2]-p0[2]];
+    h0  = norm(v);
+    dir = (h0 < EPS) ? [0,0,1] : [v[0]/h0, v[1]/h0, v[2]/h0];
+
+    // Angle from +Z (OpenSCAD trig uses degrees)
+    ez   = [0,0,1];
+    cang = _clamp(dir[2], -1, 1);
+    ang  = acos(cang);
+
+    // Safe rotation axis (handle near-parallel cases)
+    cr = cross(ez, dir);
+    ax = (ang < EPS) ? [1,0,0] :
+         (abs(ang-180) < EPS ? [1,0,0] :
+          (norm(cr) < EPS ? [1,0,0] : cr));
+
+    // Total height including asymmetric overcuts
+    h = h0 + extra0 + extra1;
+
+    // Build: position at p0, rotate onto segment,
+    // then shift back by extra0 so the "nominal" span stays p0..p1
+    translate(p0)
+        rotate(a=ang, v=ax)
+            translate([0,0,-extra0])
+                cylinder(h=h, d=d, $fn=$fn);
+}
+
+// Convenience symmetric wrapper (optional)
+module two_point_cylinder_sym(p0, p1, d, h_extra=0, $fn=48) {
+    two_point_cylinder(p0, p1, d, extra0=h_extra/2, extra1=h_extra/2, $fn=$fn);
+}
+
