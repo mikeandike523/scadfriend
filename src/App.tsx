@@ -122,15 +122,19 @@ export default function App() {
 
   const FILE_BROWSER_WIDTH = 200;
   // Split pane proportions (fr units) for CSS grid; viewer pane is fixed at 1fr
-  const resizingRef = useRef<'fileBrowser' | 'editor' | null>(null);
+  const resizingRef = useRef<"fileBrowser" | "editor" | null>(null);
   const [fileBrowserFrac, setFileBrowserFrac] = useState<number>(0);
   const [editorFrac, setEditorFrac] = useState<number>(0);
   // keep refs for latest proportions in mousemove handler
   const fileBrowserFracRef = useRef<number>(fileBrowserFrac);
   const editorFracRef = useRef<number>(editorFrac);
   // keep refs in sync with state for use in mousemove handler
-  useEffect(() => { fileBrowserFracRef.current = fileBrowserFrac; }, [fileBrowserFrac]);
-  useEffect(() => { editorFracRef.current = editorFrac; }, [editorFrac]);
+  useEffect(() => {
+    fileBrowserFracRef.current = fileBrowserFrac;
+  }, [fileBrowserFrac]);
+  useEffect(() => {
+    editorFracRef.current = editorFrac;
+  }, [editorFrac]);
   const [windowWidth, setWindowWidth] = useState<number | null>(null);
 
   const [projectHandle, setProjectHandle] =
@@ -159,7 +163,6 @@ export default function App() {
       }
     });
   }, []);
-
 
   useEffect(() => {
     const onMove = (e: MouseEvent) => {
@@ -205,7 +208,6 @@ export default function App() {
 
   const orbitControlsRef = useRef<OrbitControls | null>(null);
   const threeObjectsRef = useRef<ThreeHandles | null>(null);
-
 
   useEffect(() => {
     consoleDivRef.current?.scrollTo({
@@ -318,12 +320,18 @@ export default function App() {
 
   const selectProject = async () => {
     try {
-      const handle = await (window as object as {
-        showDirectoryPicker: () => Promise<FileSystemDirectoryHandle>;
-      }).showDirectoryPicker();
-      const perm = await (handle as object as {
-        requestPermission: (options: { mode: "readwrite" | "read" }) => Promise<string>;
-      }).requestPermission({ mode: "readwrite" });
+      const handle = await (
+        window as object as {
+          showDirectoryPicker: () => Promise<FileSystemDirectoryHandle>;
+        }
+      ).showDirectoryPicker();
+      const perm = await (
+        handle as object as {
+          requestPermission: (options: {
+            mode: "readwrite" | "read";
+          }) => Promise<string>;
+        }
+      ).requestPermission({ mode: "readwrite" });
       if (perm === "granted") {
         await storeDirectoryHandle(handle);
         setProjectHandle(handle);
@@ -369,7 +377,7 @@ export default function App() {
     part: OpenSCADPart,
     backend: "Manifold" | "CGAL",
     path: string,
-    extraFiles: Record<string, string>
+    extraFiles: Record<string, string | Uint8Array>
   ) =>
     new Promise<void>((resolve, reject) => {
       const w = new Worker(new URL("./openscad.worker.ts", import.meta.url), {
@@ -425,9 +433,12 @@ export default function App() {
       // Collect .scad and .stl imports to upload into the worker VM
       let extraFiles: Record<string, string | Uint8Array> = {};
       if (projectHandle && editorTabAgent.filePath) {
-        extraFiles = await collectImports(projectHandle, editorTabAgent.filePath);
+        extraFiles = await collectImports(
+          projectHandle,
+          editorTabAgent.filePath
+        );
       }
-      console.log("extraFiles",extraFiles);
+      console.log("extraFiles", extraFiles);
       for (const [n, p] of Object.entries(parts))
         if (p.exported)
           await renderPartInWorker(
@@ -441,9 +452,8 @@ export default function App() {
       log("Done");
       setPartSettings({ ...partSettings });
       updateThreeScene();
-
     } catch (err) {
-      console.error(err)
+      console.error(err);
       alert("Rendering failed");
       log(`Fail: ${formatError(err)}`);
     } finally {
@@ -456,9 +466,15 @@ export default function App() {
     if (!part?.stl) {
       return alert(`${name} missing`);
     }
+
+    // Make sure the bytes are backed by a regular ArrayBuffer (not SAB)
+    const ab = copySharedBufferToArrayBuffer(part.stl.buffer);
+    // Respect the original view window
+    const bytes = new Uint8Array(ab, part.stl.byteOffset, part.stl.byteLength);
+
     // If File System Access API is unsupported or no project handle, fallback to browser download
     if (fsaUnsupported || !projectHandle) {
-      const url = URL.createObjectURL(new Blob([part.stl]));
+      const url = URL.createObjectURL(new Blob([bytes]));
       const a = document.createElement("a");
       a.href = url;
       a.download = `${name}.stl`;
@@ -467,6 +483,7 @@ export default function App() {
       document.body.removeChild(a);
       return;
     }
+
     try {
       const exportsDir = await projectHandle.getDirectoryHandle("exports", {
         create: true,
@@ -475,7 +492,7 @@ export default function App() {
         create: true,
       });
       const writable = await fileHandle.createWritable();
-      await writable.write(part.stl);
+      await writable.write(bytes); // <-- bytes is safe
       await writable.close();
     } catch (err) {
       alert(`Saving export failed: ${formatError(err)}`);
@@ -496,7 +513,8 @@ export default function App() {
           padding="0 32px"
         >
           <P textAlign="center" maxWidth="600px">
-            SCADFriend works by using folders to organize projects. Select a folder by clicking the button below.
+            SCADFriend works by using folders to organize projects. Select a
+            folder by clicking the button below.
           </P>
           <Button fontSize="150%" padding="16px 32px" onClick={selectProject}>
             Select Project Folder
@@ -512,14 +530,14 @@ export default function App() {
             gridTemplateColumns: `${fileBrowserFrac}fr ${resizeBarSVGHelper.getComputedWidth()}px ${editorFrac}fr ${resizeBarSVGHelper.getComputedWidth()}px 1fr`,
           }}
         >
-        <div
-          style={{
-            height: "100%",
-            background: "#eee",
-            display: "flex",
-            flexDirection: "column",
-          }}
-        >
+          <div
+            style={{
+              height: "100%",
+              background: "#eee",
+              display: "flex",
+              flexDirection: "column",
+            }}
+          >
             <Div
               display="flex"
               alignItems="center"
@@ -538,9 +556,12 @@ export default function App() {
                 onOpenFile={openFileFromBrowser}
               />
             </div>
-        </div>
-        <div style={resizeBarStyle} onMouseDown={() => startResizing("fileBrowser")} />
-        <div
+          </div>
+          <div
+            style={resizeBarStyle}
+            onMouseDown={() => startResizing("fileBrowser")}
+          />
+          <div
             ref={editorContainerRef}
             style={{
               height: "100%",
@@ -554,7 +575,10 @@ export default function App() {
               containerRef={editorContainerRef}
             />
           </div>
-        <div style={resizeBarStyle} onMouseDown={() => startResizing("editor")} />
+          <div
+            style={resizeBarStyle}
+            onMouseDown={() => startResizing("editor")}
+          />
           <div
             className="viewer-container"
             ref={viewerContainerRef}
@@ -737,9 +761,7 @@ export default function App() {
           <H1 color="red" textAlign="center">
             Your browser is too old!
           </H1>
-          <P textAlign="center">
-            The File System Access API isn't supported.
-          </P>
+          <P textAlign="center">The File System Access API isn't supported.</P>
           <P textAlign="center">Upgrade to a modern browser.</P>
         </Div>
       </Div>
