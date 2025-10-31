@@ -132,7 +132,7 @@ export default function FileBrowser({
   const [tree, setTree] = useState<FileNode[]>([]);
   const [expandedDirs, setExpandedDirs] = useState<Set<string>>(new Set());
 
-  // initialize directory tree and expanded state from disk
+  // initialize directory tree and expanded state from persisted storage
   useEffect(() => {
     async function init() {
       const nodes = await readDirectory(rootHandle);
