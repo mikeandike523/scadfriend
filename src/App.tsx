@@ -121,21 +121,28 @@ export default function App() {
   const viewerContainerRef = useRef<HTMLDivElement>(null);
 
   const FILE_BROWSER_WIDTH = 200;
-  // Split pane widths are managed manually
+  // Split pane proportions (fr units) for CSS grid; viewer pane is fixed at 1fr
   const resizingRef = useRef<'fileBrowser' | 'editor' | null>(null);
-  const [fileBrowserWidth, setFileBrowserWidth] = useState<number>(FILE_BROWSER_WIDTH);
-  const [editorWidth, setEditorWidth] = useState<number>(0);
-
+  const [fileBrowserFrac, setFileBrowserFrac] = useState<number>(0);
+  const [editorFrac, setEditorFrac] = useState<number>(0);
+  // keep refs for latest proportions in mousemove handler
+  const fileBrowserFracRef = useRef<number>(fileBrowserFrac);
+  const editorFracRef = useRef<number>(editorFrac);
+  // keep refs in sync with state for use in mousemove handler
+  useEffect(() => { fileBrowserFracRef.current = fileBrowserFrac; }, [fileBrowserFrac]);
+  useEffect(() => { editorFracRef.current = editorFrac; }, [editorFrac]);
   const [windowWidth, setWindowWidth] = useState<number | null>(null);
 
   const [projectHandle, setProjectHandle] =
     useState<FileSystemDirectoryHandle | null>(null);
 
+  // Initialize pane proportions once on mount when we know window width
   useEffect(() => {
-    if (editorWidth === 0 && windowWidth) {
-      setEditorWidth(Math.floor(windowWidth * 0.5));
+    if (windowWidth && fileBrowserFrac === 0 && editorFrac === 0) {
+      setFileBrowserFrac(FILE_BROWSER_WIDTH / windowWidth);
+      setEditorFrac(0.5);
     }
-  }, [windowWidth, editorWidth]);
+  }, [windowWidth, fileBrowserFrac, editorFrac]);
 
   useEffect(() => {
     setWindowWidth(window.innerWidth);
@@ -158,13 +165,27 @@ export default function App() {
     const onMove = (e: MouseEvent) => {
       const which = resizingRef.current;
       if (!which) return;
-      const min = 100;
-      const max = window.innerWidth - 100;
-      const newSize = Math.min(max, Math.max(min, e.clientX));
+      const minPx = 100;
+      const barW = resizeBarSVGHelper.getComputedWidth();
+      const totalW = window.innerWidth;
+      const freeW = totalW - 2 * barW;
+      const fb = fileBrowserFracRef.current;
+      const ed = editorFracRef.current;
+      const totalFr = fb + ed + 1;
+      const unitPx = freeW / totalFr;
+      const fbPx = unitPx * fb;
       if (which === "fileBrowser") {
-        setFileBrowserWidth(newSize);
+        const abs = Math.min(totalW - minPx, Math.max(minPx, e.clientX));
+        const newFrac = (abs * totalFr) / freeW;
+        fileBrowserFracRef.current = newFrac;
+        setFileBrowserFrac(newFrac);
       } else if (which === "editor") {
-        setEditorWidth(newSize);
+        const minAbs = fbPx + barW + minPx;
+        const abs = Math.min(totalW - minPx, Math.max(minAbs, e.clientX));
+        const relPx = abs - fbPx - barW;
+        const newFrac = (relPx * totalFr) / freeW;
+        editorFracRef.current = newFrac;
+        setEditorFrac(newFrac);
       }
     };
     const stop = () => {
@@ -486,12 +507,12 @@ export default function App() {
             width: "100vw",
             height: "100vh",
             overflow: "hidden",
-            display: "flex",
+            display: "grid",
+            gridTemplateColumns: `${fileBrowserFrac}fr ${resizeBarSVGHelper.getComputedWidth()}px ${editorFrac}fr ${resizeBarSVGHelper.getComputedWidth()}px 1fr`,
           }}
         >
         <div
           style={{
-            width: fileBrowserWidth,
             height: "100%",
             background: "#eee",
             display: "flex",
@@ -525,7 +546,6 @@ export default function App() {
               overflow: "auto",
               background: "#f5f5f5",
               padding: "8px",
-              width: `${editorWidth}px`,
             }}
           >
             <EditorTab
@@ -533,12 +553,11 @@ export default function App() {
               containerRef={editorContainerRef}
             />
           </div>
-          <div style={resizeBarStyle} onMouseDown={() => startResizing("editor")} />
+        <div style={resizeBarStyle} onMouseDown={() => startResizing("editor")} />
           <div
             className="viewer-container"
             ref={viewerContainerRef}
             style={{
-              flex: 1,
               height: "100%",
               display: "grid",
               gridTemplateRows: "auto 1.5fr 1fr",
