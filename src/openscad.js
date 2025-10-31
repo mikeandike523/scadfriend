@@ -18,15 +18,9 @@ async function OpenSCAD(options) {
     };
     // globalThis.OpenSCAD = module;
     const getInstance = (await import( /* @vite-ignore */ wasmModule + `#${Math.random()}`)).default;
-    // delete globalThis.OpenSCAD;
-    // This seemed to hang for some odd reason
-    // Maybe this is not supported in es-based workers?
-    // Idk
-    // await new Promise((resolve) => {
-    //     module.onRuntimeInitialized = () => resolve(null);
-    // });
+    
     const instance = getInstance(module);
-    console.log(instance)
+    
     return instance
 }
 

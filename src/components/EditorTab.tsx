@@ -42,8 +42,6 @@ export default forwardRef<HTMLDivElement, EditorTabProps>(function EditorTab(
     currentContainerWidth
   ])
 
-  console.log("EditorTab width:", currentContainerWidth);
-
   return (
     <Div
       ref={ref}

@@ -79,3 +79,25 @@ module rotate_extrude_x(profile_points, degrees=360, facets=64) {
         rotate_extrude($fn=facets, degrees=degrees)
             polygon(points = transformed_points);
 }
+
+
+module two_point_box(A, B) {
+    // Ensure A and B are 3D vectors
+    assert(len(A) == 3 && len(B) == 3, "A and B must be 3D vectors");
+
+    // Compute the minimum and maximum for each coordinate
+    min_pt = [min(A[0], B[0]), min(A[1], B[1]), min(A[2], B[2])];
+    max_pt = [max(A[0], B[0]), max(A[1], B[1]), max(A[2], B[2])];
+
+    // Compute the size of the box
+    size = [
+        max_pt[0] - min_pt[0],
+        max_pt[1] - min_pt[1],
+        max_pt[2] - min_pt[2]
+    ];
+
+    // Translate to the minimum corner and draw the cube
+    translate(min_pt)
+        cube(size, center = false);
+}
+

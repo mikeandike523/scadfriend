@@ -199,8 +199,6 @@ self.onmessage = async (event: MessageEvent<RenderRequest>) => {
     addExtraFiles(instance.FS as FS, extraFiles);
     writeFileWithDirs(instance.FS as FS, "/" + path, part.ownSourceCode);
 
-    console.log(formatWithLineNumbers(part.ownSourceCode));
-
     sendLog(partName, "Input file written.");
 
     sendLog(partName, `Performing render with ${backend} backend...`);
