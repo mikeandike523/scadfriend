@@ -152,3 +152,25 @@ module two_point_cylinder_sym(p0, p1, d, h_extra=0, $fn=48) {
     two_point_cylinder(p0, p1, d, extra0=h_extra/2, extra1=h_extra/2, $fn=$fn);
 }
 
+// Extrude a 2D shape in the XY plane along Z (the normal way)
+module extrude_xy(h) {
+    linear_extrude(height = h)
+        children();
+}
+
+// Extrude as if the shape were on the YZ plane, thickness along X
+module extrude_yz(h) {
+    // Rotate so that +Z becomes +X
+    rotate([0, 90, 0])
+        linear_extrude(height = h)
+            children();
+}
+
+// Extrude as if the shape were on the XZ plane, thickness along Y
+module extrude_xz(h) {
+    // Rotate so that +Z becomes +Y
+    rotate([-90, 0, 0])
+        linear_extrude(height = h)
+            children();
+}
+
