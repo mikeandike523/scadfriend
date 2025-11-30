@@ -152,25 +152,29 @@ module two_point_cylinder_sym(p0, p1, d, h_extra=0, $fn=48) {
     two_point_cylinder(p0, p1, d, extra0=h_extra/2, extra1=h_extra/2, $fn=$fn);
 }
 
-// Extrude a 2D shape in the XY plane along Z (the normal way)
+// XY plane  (coords: [x, y], extrude along +Z)
 module extrude_xy(h) {
     linear_extrude(height = h)
         children();
 }
 
-// Extrude as if the shape were on the YZ plane, thickness along X
+// YZ plane  (coords: [y, z], extrude along +X)
 module extrude_yz(h) {
-    // Rotate so that +Z becomes +X
-    rotate([0, 90, 0])
+    // Rotates so that:
+    //   local X -> +Y
+    //   local Y -> +Z
+    //   local Z -> +X
+    rotate([90, 0, 90])
         linear_extrude(height = h)
             children();
 }
 
-// Extrude as if the shape were on the XZ plane, thickness along Y
+// XZ plane  (coords: [x, z], extrude along +Y)
 module extrude_xz(h) {
-    // Rotate so that +Z becomes +Y
-    rotate([-90, 0, 0])
-        linear_extrude(height = h)
-            children();
+    // Rotate so that +Z goes to +Y, but that flips Z,
+    // then mirror to make the in-plane axes positive:
+    mirror([0, 0, 1])       // flip world Z to keep +Z coord positive
+        rotate([-90, 0, 0]) // local Z -> +Y
+            linear_extrude(height = h)
+                children();
 }
-
