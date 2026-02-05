@@ -28,6 +28,10 @@ interface RenderRequest {
    * Map of project-relative paths to file contents. .scad files as string, .stl files as Uint8Array.
    */
   extraFiles?: Record<string, string | Uint8Array>;
+  /**
+   * Absolute imports (e.g. /SFLibs/foo.scad) to fetch and place in the VM FS.
+   */
+  externalImports?: string[];
 }
 
 interface LogMessage {
@@ -50,76 +54,116 @@ interface ErrorMessage {
 
 /**
  *
- * Detects `include` or `use` statements whose path begins with "/SFLibs/"
- *
- * Returns an array of paths (prefix not included)
- *
- * Note:
- *
- * The relevant syntax in OpenSCAD is:
- *
- * include </SFLibs/library.scad>; or
- * use </SFLibs/library.scad>;
- *
- * @param code - OpenSCAD source code
- */
-function detectSFLibsInclusions(code: string): string[] {
-  const regex = /(include|use)\s+<\s*\/SFLibs\/([^>]+)>/g;
-  const matches: string[] = [];
+function extractImports(code: string): string[] {
+  const regex = /(include|use)\s*<([^>]+)>/g;
+  const imports: string[] = [];
   let match: RegExpExecArray | null;
-
   while ((match = regex.exec(code)) !== null) {
-    matches.push(match[2]);
+    imports.push(match[2]);
   }
-
-  return matches;
+  return imports;
 }
 
-async function grabSFLibFile(path: string) {
-  const url = "/SFLibs/" + path;
-  const response = await fetch(url, {
-    headers: {
-      "Content-Type": "text/plain; charset=UTF-8",
-    },
-  });
+function extractStlImports(code: string): string[] {
+  const regex = /import\s*\(\s*["']([^"']+\.stl)["']\s*\)/g;
+  const imports: string[] = [];
+  let match: RegExpExecArray | null;
+  while ((match = regex.exec(code)) !== null) {
+    imports.push(match[1]);
+  }
+  return imports;
+}
+
+function normalizePathParts(parts: string[]): string {
+  const stack: string[] = [];
+  for (const part of parts) {
+    if (part === "" || part === ".") continue;
+    if (part === "..") stack.pop();
+    else stack.push(part);
+  }
+  return stack.join("/");
+}
+
+function normalizeAbsolutePath(path: string): string {
+  const normalized = normalizePathParts(path.split("/"));
+  return normalized ? "/" + normalized : "/";
+}
+
+function resolveAbsoluteImportPath(
+  currentAbsPath: string,
+  importPath: string
+): string {
+  if (importPath.startsWith("/")) {
+    return normalizeAbsolutePath(importPath);
+  }
+  const baseParts = currentAbsPath.split("/").slice(0, -1);
+  const importParts = importPath.split("/");
+  return "/" + normalizePathParts([...baseParts, ...importParts]);
+}
+
+function collectAbsoluteImportsFromCode(
+  code: string,
+  currentAbsPath?: string
+): string[] {
+  const out: string[] = [];
+  const pushImport = (imp: string) => {
+    if (imp.startsWith("@/")) return;
+    if (imp.startsWith("/")) {
+      out.push(normalizeAbsolutePath(imp));
+      return;
+    }
+    if (currentAbsPath) {
+      out.push(resolveAbsoluteImportPath(currentAbsPath, imp));
+    }
+  };
+
+  for (const imp of extractImports(code)) pushImport(imp);
+  for (const imp of extractStlImports(code)) pushImport(imp);
+  return out;
+}
+
+async function grabExternalFile(path: string): Promise<string | Uint8Array> {
+  const response = await fetch(path);
   if (!response.ok) {
     if (response.status === 404) {
-      throw new Error(`Failed to load SFLib file: ${url}, file not found.`);
+      throw new Error(`Failed to load external file: ${path}, not found.`);
     }
     throw new Error(
-      `Failed to load SFLib file: ${url}, status: ${response.status}`
+      `Failed to load external file: ${path}, status: ${response.status}`
     );
   }
+
+  if (path.toLowerCase().endsWith(".stl")) {
+    return new Uint8Array(await response.arrayBuffer());
+  }
+
   return await response.text();
 }
 
-async function addSFLibs(instance: OpenSCAD, paths: string[]) {
+async function addExternalFiles(
+  instance: OpenSCAD,
+  paths: string[],
+  log?: (message: string) => void
+) {
+  if (!paths.length) return;
   const fs = instance.FS as FS;
-  fs.mkdir("/SFLibs");
-  const alreadyCreatedFolders = new Set<string>();
-  for (const path of paths) {
-    const segments = path.split("/");
-    if (segments.length === 0) {
-      continue;
-    }
-    if (alreadyCreatedFolders.has(path)) continue;
-    alreadyCreatedFolders.add(path);
-    if (segments.length === 1) {
-      const code = await grabSFLibFile(path);
-      fs.writeFile("/SFLibs/" + path, code);
-    } else {
-      const priorFolders: string[] = [];
-      for (let i = 0; i < segments.length - 1; i++) {
-        const segmentsAcc = segments.slice(0, i + 1).join("/");
-        priorFolders.push(segmentsAcc);
+  const pending = paths.map((p) => normalizeAbsolutePath(p));
+  const fetched = new Set<string>();
+
+  while (pending.length) {
+    const path = normalizeAbsolutePath(pending.pop() as string);
+    if (fetched.has(path)) continue;
+    fetched.add(path);
+
+    log?.(`Fetching external import: ${path}`);
+    const content = await grabExternalFile(path);
+    writeFileWithDirs(fs, path, content);
+
+    if (typeof content === "string") {
+      const more = collectAbsoluteImportsFromCode(content, path);
+      for (const imp of more) {
+        if (!fetched.has(imp)) pending.push(imp);
       }
-      for (const folder of priorFolders) {
-        if (alreadyCreatedFolders.has(folder)) continue;
-        fs.mkdir("/SFLibs/" + folder);
-        alreadyCreatedFolders.add(folder);
-      }
-      const code = await grabSFLibFile(path);
-      fs.writeFile("/SFLibs/" + path, code);
     }
   }
 }
@@ -179,6 +223,7 @@ self.onmessage = async (event: MessageEvent<RenderRequest>) => {
     mcad = true,
     path,
     extraFiles,
+    externalImports,
   } = data; // Default to Manifold if not specified
 
   try {
@@ -187,11 +232,19 @@ self.onmessage = async (event: MessageEvent<RenderRequest>) => {
     const instance = await oscadUtil.createInstance({
       fonts,
       mcad,
+      print: (text) => sendLog(partName, text),
+      printErr: (text) => sendLog(partName, `ERR: ${text}`),
     });
 
-    const sflibInclusions = detectSFLibsInclusions(part.ownSourceCode);
-
-    await addSFLibs(instance,sflibInclusions);
+    const initialExternalImports = new Set<string>(externalImports ?? []);
+    for (const imp of collectAbsoluteImportsFromCode(part.ownSourceCode)) {
+      initialExternalImports.add(imp);
+    }
+    await addExternalFiles(
+      instance,
+      Array.from(initialExternalImports),
+      (message) => sendLog(partName, message)
+    );
 
     sendLog(partName, "OpenSCAD initialized.");
 
@@ -226,7 +279,6 @@ self.onmessage = async (event: MessageEvent<RenderRequest>) => {
       stl: output,
     } as ResultMessage);
   } catch (err: unknown) {
-    console.error(err);
     (self as DedicatedWorkerGlobalScope).postMessage({
       type: "error",
       partName,

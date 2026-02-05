@@ -10,14 +10,20 @@ import OpenSCAD from "./openscad.js";
 const createInstance = async ({
   fonts = true,
   mcad = true,
+  print,
+  printErr,
 }: {
   fonts?: boolean;
   mcad?: boolean;
+  print?: (text: string) => void;
+  printErr?: (text: string) => void;
 } = {}) => {
   const instance = await OpenSCAD({
     noInitialRun: true, // The README example on the openscad-wasm repo shows noInitialRun
     // Previous testing shows noInitialRun should be true for it to work at all
     // I don't really understand what this is for
+    print,
+    printErr,
   });
   if (fonts) {
     const addFonts = (await import("./openscad.fonts.js")).addFonts;

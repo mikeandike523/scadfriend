@@ -27,6 +27,7 @@ import { formatError } from "./utils/serialization";
 import ResizeSvgHelper from "./utils/ResizeSVGHelper";
 import ThreeViewer, { ThreeHandles } from "./components/ThreeViewer";
 import { collectImports } from "./utils/importUtils";
+import { subscribeUiLog } from "./utils/uiLogger";
 import {
   storeDirectoryHandle,
   getStoredDirectoryHandle,
@@ -318,6 +319,10 @@ export default function App() {
     }
   };
 
+  const log = (msg: string) =>
+    setMessages((m) => [...m, msg].slice(-MAX_MESSAGES));
+  const clearLogs = () => setMessages([]);
+
   const selectProject = async () => {
     try {
       const handle = await (
@@ -337,7 +342,7 @@ export default function App() {
         setProjectHandle(handle);
       }
     } catch (err) {
-      console.error(err);
+      log(`Failed to select project: ${formatError(err)}`);
     }
   };
 
@@ -347,7 +352,7 @@ export default function App() {
   const closeProject = () => {
     setProjectHandle(null);
     clearStoredDirectoryHandle().catch((err) =>
-      console.error("Failed to clear stored directory handle:", err)
+      log(`Failed to clear stored directory handle: ${formatError(err)}`)
     );
   };
 
@@ -368,16 +373,25 @@ export default function App() {
 
   useEffect(updateVisibility, [updateVisibility]);
 
-  const log = (msg: string) =>
-    setMessages((m) => [...m, msg].slice(-MAX_MESSAGES));
-  const clearLogs = () => setMessages([]);
+  useEffect(() => {
+    return subscribeUiLog((entry) => {
+      const prefix =
+        entry.level === "error"
+          ? "ERROR"
+          : entry.level === "warn"
+          ? "WARN"
+          : "INFO";
+      log(`${prefix}: ${entry.message}`);
+    });
+  }, [log]);
 
   const renderPartInWorker = (
     name: string,
     part: OpenSCADPart,
     backend: "Manifold" | "CGAL",
     path: string,
-    extraFiles: Record<string, string | Uint8Array>
+    extraFiles: Record<string, string | Uint8Array>,
+    externalImports: string[]
   ) =>
     new Promise<void>((resolve, reject) => {
       const w = new Worker(new URL("./openscad.worker.ts", import.meta.url), {
@@ -408,6 +422,7 @@ export default function App() {
         backend,
         path,
         extraFiles,
+        externalImports,
       });
     });
 
@@ -432,13 +447,15 @@ export default function App() {
     try {
       // Collect .scad and .stl imports to upload into the worker VM
       let extraFiles: Record<string, string | Uint8Array> = {};
+      let externalImports: string[] = [];
       if (projectHandle && editorTabAgent.filePath) {
-        extraFiles = await collectImports(
+        const collected = await collectImports(
           projectHandle,
           editorTabAgent.filePath
         );
+        extraFiles = collected.files;
+        externalImports = collected.externalImports;
       }
-      console.log("extraFiles", extraFiles);
       for (const [n, p] of Object.entries(parts))
         if (p.exported)
           await renderPartInWorker(
@@ -446,14 +463,14 @@ export default function App() {
             p,
             backend,
             editorTabAgent.filePath || "input.scad",
-            extraFiles
+            extraFiles,
+            externalImports
           );
       setRenderedAtLeastOnce(true);
       log("Done");
       setPartSettings({ ...partSettings });
       updateThreeScene();
     } catch (err) {
-      console.error(err);
       alert("Rendering failed");
       log(`Fail: ${formatError(err)}`);
     } finally {

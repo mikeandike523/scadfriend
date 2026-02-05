@@ -1,6 +1,7 @@
 // fileSystemUtils.ts
 // This module contains helper functions for interacting with the FileSystemAccessAPI,
 // including persisting a directory handle for future use.
+import { emitUiLog } from "./uiLogger";
 
 export type OpenFilePickerOptions = {
   multiple?: boolean;
@@ -74,7 +75,10 @@ export async function getStoredFileHandle(): Promise<FileSystemFileHandle | null
       };
     });
   } catch (error) {
-    console.error("Error retrieving stored file handle:", error);
+    emitUiLog(
+      "error",
+      `Error retrieving stored file handle: ${error instanceof Error ? error.message : String(error)}`
+    );
     return null;
   }
 }
@@ -93,7 +97,10 @@ export async function deleteStoredFileHandle(): Promise<void> {
         };
       };
       request.onerror = () => {
-        console.error("Failed to delete file handle", request.error);
+        emitUiLog(
+          "error",
+          `Failed to delete file handle: ${request.error?.message ?? "unknown error"}`
+        );
         db.close();
         reject(request.error);
       };
@@ -103,7 +110,10 @@ export async function deleteStoredFileHandle(): Promise<void> {
       };
     });
   } catch (error) {
-    console.error("Error deleting stored file handle:", error);
+    emitUiLog(
+      "error",
+      `Error deleting stored file handle: ${error instanceof Error ? error.message : String(error)}`
+    );
   }
 }
 
@@ -118,7 +128,10 @@ export async function reopenLastFile(): Promise<{
       const content = await file.text();
       return { fileHandle, content };
     } catch (error) {
-      console.error("Error reopening last file:", error);
+      emitUiLog(
+        "error",
+        `Error reopening last file: ${error instanceof Error ? error.message : String(error)}`
+      );
       return null;
     }
   }
@@ -171,7 +184,10 @@ export async function openExistingFile(
     const content = await file.text();
     return { fileHandle: handle, content };
   } catch (error) {
-    console.error("Error opening file:", error);
+    emitUiLog(
+      "error",
+      `Error opening file: ${error instanceof Error ? error.message : String(error)}`
+    );
     return null;
   }
 }
@@ -186,7 +202,10 @@ export async function saveFile(
     await writable.close();
     return true;
   } catch (error) {
-    console.error("Error saving file:", error);
+    emitUiLog(
+      "error",
+      `Error saving file: ${error instanceof Error ? error.message : String(error)}`
+    );
     return false;
   }
 }
@@ -218,7 +237,10 @@ export async function createNewFile(
     await saveFile(handle, initialContent);
     return { fileHandle: handle, content: initialContent };
   } catch (error) {
-    console.error("Error creating new file:", error);
+    emitUiLog(
+      "error",
+      `Error creating new file: ${error instanceof Error ? error.message : String(error)}`
+    );
     return null;
   }
 }
@@ -293,7 +315,10 @@ export async function getStoredDirectoryHandle(): Promise<FileSystemDirectoryHan
       };
     });
   } catch (error) {
-    console.error("Error retrieving stored directory handle:", error);
+    emitUiLog(
+      "error",
+      `Error retrieving stored directory handle: ${error instanceof Error ? error.message : String(error)}`
+    );
     return null;
   }
 }
@@ -315,7 +340,12 @@ export async function loadFileExplorerState(
     }
     return { expanded: [] };
   } catch (error) {
-    console.error('Error loading file-explorer state from localStorage:', error);
+    emitUiLog(
+      "error",
+      `Error loading file-explorer state from localStorage: ${
+        error instanceof Error ? error.message : String(error)
+      }`
+    );
     return { expanded: [] };
   }
 }
@@ -331,7 +361,12 @@ export async function saveFileExplorerState(
     const key = `fileExplorerState_${root.name}`;
     localStorage.setItem(key, JSON.stringify({ expanded }));
   } catch (error) {
-    console.error('Error saving file-explorer state to localStorage:', error);
+    emitUiLog(
+      "error",
+      `Error saving file-explorer state to localStorage: ${
+        error instanceof Error ? error.message : String(error)
+      }`
+    );
   }
 }
 
@@ -343,6 +378,7 @@ export async function clearStoredDirectoryHandle(): Promise<void> {
     const request = window.indexedDB.deleteDatabase("FileHandleDB");
     request.onsuccess = () => resolve();
     request.onerror = () => reject(request.error);
-    request.onblocked = () => console.warn("clearStoredDirectoryHandle: deleteDatabase blocked");
+    request.onblocked = () =>
+      emitUiLog("warn", "clearStoredDirectoryHandle: deleteDatabase blocked");
   });
 }
