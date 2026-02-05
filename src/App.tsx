@@ -513,8 +513,14 @@ export default function App() {
           padding="0 32px"
         >
           <P textAlign="center" maxWidth="600px">
-            SCADFriend works by using folders to organize projects. Select a
-            folder by clicking the button below.
+            SCADFriend works by using local folders to organize projects.
+          </P>
+          <P textAlign="center" maxWidth="600px">
+            Select a folder by clicking the button below.
+          </P>
+          <P textAlign="center" maxWidth="600px">
+            For new projects, create a new folder on your computer, then select
+            it using the button below.
           </P>
           <Button fontSize="150%" padding="16px 32px" onClick={selectProject}>
             Select Project Folder
