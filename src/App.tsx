@@ -33,6 +33,7 @@ import {
   getStoredDirectoryHandle,
   clearStoredDirectoryHandle,
 } from "./utils/fsaUtils";
+import { saveVmDebugSnapshot } from "./utils/debugSnapshot";
 
 const resizeBarSVGHelper = new ResizeSvgHelper({
   arrowHeadWidth: 12,
@@ -406,7 +407,18 @@ export default function App() {
       });
       w.onmessage = (e) => {
         if (e.data.type === "log") log(`[${name}] ${e.data.message}`);
-        else if (e.data.type === "result") {
+        else if (e.data.type === "debugfs") {
+          if (!projectHandle || fsaUnsupported) {
+            log(`[${name}] Debug snapshot skipped (no project handle).`);
+            return;
+          }
+          saveVmDebugSnapshot(projectHandle, name, e.data.snapshot).catch(
+            (err) =>
+              log(
+                `[${name}] Failed to write debug snapshot: ${formatError(err)}`
+              )
+          );
+        } else if (e.data.type === "result") {
           completedModelRef.current[name] = { ...part, stl: e.data.stl };
           log(`Rendered "${name}"`);
           w.terminate();

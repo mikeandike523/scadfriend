@@ -6,6 +6,7 @@ import {
   extractImports,
   extractStlImports,
   normalizeAbsolutePath,
+  normalizePathParts,
   rewriteProjectImportsForVm,
   toVmProjectPath,
 } from "./utils/importUtils";
@@ -14,6 +15,7 @@ import {
   toSerializableObject,
 } from "./utils/serialization";
 import { buildPathTree, formatPathTree } from "./utils/pathTree";
+import { type FsSnapshotNode, FsMirror } from "./utils/fsSnapshot";
 
 // (Optional) Define the interface for an OpenSCAD part if not imported.
 export interface OpenSCADPart {
@@ -59,6 +61,11 @@ interface ErrorMessage {
   error: SerializableObject;
 }
 
+interface DebugFsMessage {
+  type: "debugfs";
+  partName: string;
+  snapshot: FsSnapshotNode;
+}
 
 function resolveAbsoluteImportPath(
   currentAbsPath: string,
@@ -115,7 +122,8 @@ async function grabExternalFile(path: string): Promise<string | Uint8Array> {
 async function addExternalFiles(
   instance: OpenSCAD,
   paths: string[],
-  log?: (message: string) => void
+  log?: (message: string) => void,
+  mirror?: FsMirror
 ): Promise<string[]> {
   if (!paths.length) return [];
   const fs = instance.FS as FS;
@@ -129,7 +137,7 @@ async function addExternalFiles(
 
     log?.(`Fetching external import: ${path}`);
     const content = await grabExternalFile(path);
-    writeFileWithDirs(fs, path, content);
+    writeFileWithDirs(fs, path, content, mirror);
 
     if (typeof content === "string") {
       const more = collectAbsoluteImportsFromCode(content, path);
@@ -142,7 +150,12 @@ async function addExternalFiles(
   return Array.from(fetched.values());
 }
 
-function writeFileWithDirs(fs: FS, path: string, content: string | Uint8Array) {
+function writeFileWithDirs(
+  fs: FS,
+  path: string,
+  content: string | Uint8Array,
+  mirror?: FsMirror
+) {
   const segments = path.split("/").filter(Boolean);
   let current = "";
   for (let i = 0; i < segments.length - 1; i++) {
@@ -152,9 +165,15 @@ function writeFileWithDirs(fs: FS, path: string, content: string | Uint8Array) {
     } catch {
       /* already exists */
     }
+    mirror?.mkdir(current);
   }
   // Write text or binary content
   fs.writeFile(path, content as any);
+  const text =
+    typeof content === "string"
+      ? content
+      : `<<binary ${content.byteLength} bytes>>`;
+  mirror?.writeFile(segments, text);
 }
 
 /**
@@ -163,7 +182,8 @@ function writeFileWithDirs(fs: FS, path: string, content: string | Uint8Array) {
  */
 function addExtraFiles(
   fs: FS,
-  files: Record<string, string | Uint8Array> | undefined
+  files: Record<string, string | Uint8Array> | undefined,
+  mirror?: FsMirror
 ): string[] {
   if (!files) return [];
   const written: string[] = [];
@@ -171,7 +191,7 @@ function addExtraFiles(
     const vmPath = toVmProjectPath(p);
     const content =
       typeof c === "string" ? rewriteProjectImportsForVm(c, p) : c;
-    writeFileWithDirs(fs, vmPath, content);
+    writeFileWithDirs(fs, vmPath, content, mirror);
     written.push(vmPath);
   }
   return written;
@@ -218,6 +238,7 @@ self.onmessage = async (event: MessageEvent<RenderRequest>) => {
       print: (text) => sendLog(partName, text),
       printErr: (text) => sendLog(partName, `ERR: ${text}`),
     });
+    const mirror = new FsMirror();
 
     const initialExternalImports = new Set<string>(externalImports ?? []);
     for (const imp of collectAbsoluteImportsFromCode(
@@ -229,19 +250,24 @@ self.onmessage = async (event: MessageEvent<RenderRequest>) => {
     const externalWritten = await addExternalFiles(
       instance,
       Array.from(initialExternalImports),
-      (message) => sendLog(partName, message)
+      (message) => sendLog(partName, message),
+      mirror
     );
 
     sendLog(partName, "OpenSCAD initialized.");
 
     sendLog(partName, "Writing input file...");
-    const projectWritten = addExtraFiles(instance.FS as FS, extraFiles);
+    const projectWritten = addExtraFiles(
+      instance.FS as FS,
+      extraFiles,
+      mirror
+    );
     const vmMainPath = toVmProjectPath(path);
     const rewrittenMain = rewriteProjectImportsForVm(
       part.ownSourceCode,
       path
     );
-    writeFileWithDirs(instance.FS as FS, vmMainPath, rewrittenMain);
+    writeFileWithDirs(instance.FS as FS, vmMainPath, rewrittenMain, mirror);
 
     const writtenPaths = [...externalWritten, ...projectWritten, vmMainPath];
     if (writtenPaths.length) {
@@ -251,6 +277,17 @@ self.onmessage = async (event: MessageEvent<RenderRequest>) => {
     }
 
     sendLog(partName, "Input file written.");
+
+    try {
+      const snapshot = mirror.toSnapshot();
+      (self as DedicatedWorkerGlobalScope).postMessage({
+        type: "debugfs",
+        partName,
+        snapshot,
+      } as DebugFsMessage);
+    } catch (err) {
+      sendLog(partName, `Failed to snapshot VM FS: ${String(err)}`);
+    }
 
     sendLog(partName, `Performing render with ${backend} backend...`);
     const args = [
