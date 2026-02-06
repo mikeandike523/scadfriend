@@ -215,6 +215,9 @@ const sendLog = (partName: string, message: string) => {
   } as LogMessage);
 };
 
+const WRITE_VM_DEBUG =
+  typeof __WRITE_VM_DEBUG__ !== "undefined" && __WRITE_VM_DEBUG__;
+
 self.onmessage = async (event: MessageEvent<RenderRequest>) => {
   const data = event.data;
   if (data.command !== "render") return;
@@ -238,7 +241,7 @@ self.onmessage = async (event: MessageEvent<RenderRequest>) => {
       print: (text) => sendLog(partName, text),
       printErr: (text) => sendLog(partName, `ERR: ${text}`),
     });
-    const mirror = new FsMirror();
+    const mirror = WRITE_VM_DEBUG ? new FsMirror() : undefined;
 
     const initialExternalImports = new Set<string>(externalImports ?? []);
     for (const imp of collectAbsoluteImportsFromCode(
@@ -278,15 +281,17 @@ self.onmessage = async (event: MessageEvent<RenderRequest>) => {
 
     sendLog(partName, "Input file written.");
 
-    try {
-      const snapshot = mirror.toSnapshot();
-      (self as DedicatedWorkerGlobalScope).postMessage({
-        type: "debugfs",
-        partName,
-        snapshot,
-      } as DebugFsMessage);
-    } catch (err) {
-      sendLog(partName, `Failed to snapshot VM FS: ${String(err)}`);
+    if (mirror) {
+      try {
+        const snapshot = mirror.toSnapshot();
+        (self as DedicatedWorkerGlobalScope).postMessage({
+          type: "debugfs",
+          partName,
+          snapshot,
+        } as DebugFsMessage);
+      } catch (err) {
+        sendLog(partName, `Failed to snapshot VM FS: ${String(err)}`);
+      }
     }
 
     sendLog(partName, `Performing render with ${backend} backend...`);

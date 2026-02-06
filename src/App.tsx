@@ -60,6 +60,8 @@ const resizeBarStyle = {
 };
 
 const MAX_MESSAGES: string | undefined = undefined;
+const WRITE_VM_DEBUG =
+  typeof __WRITE_VM_DEBUG__ !== "undefined" && __WRITE_VM_DEBUG__;
 type OpenSCADPartWithSTL = OpenSCADPart & { stl?: Uint8Array };
 type PartSettings = { visible: boolean; exported: boolean };
 
@@ -408,6 +410,7 @@ export default function App() {
       w.onmessage = (e) => {
         if (e.data.type === "log") log(`[${name}] ${e.data.message}`);
         else if (e.data.type === "debugfs") {
+          if (!WRITE_VM_DEBUG) return;
           if (!projectHandle || fsaUnsupported) {
             log(`[${name}] Debug snapshot skipped (no project handle).`);
             return;
