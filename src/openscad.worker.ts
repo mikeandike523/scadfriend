@@ -2,7 +2,13 @@ import { type FS } from "./openscad";
 import oscadUtil from "./oscadUtil";
 import { type OpenSCAD } from "./openscad";
 
-
+import {
+  extractImports,
+  extractStlImports,
+  normalizeAbsolutePath,
+  rewriteProjectImportsForVm,
+  toVmProjectPath,
+} from "./utils/importUtils";
 import {
   SerializableObject,
   toSerializableObject,
@@ -54,41 +60,6 @@ interface ErrorMessage {
 }
 
 
-function extractImports(code: string): string[] {
-  const regex = /(include|use)\s*<([^>]+)>/g;
-  const imports: string[] = [];
-  let match: RegExpExecArray | null;
-  while ((match = regex.exec(code)) !== null) {
-    imports.push(match[2]);
-  }
-  return imports;
-}
-
-function extractStlImports(code: string): string[] {
-  const regex = /import\s*\(\s*["']([^"']+\.stl)["']\s*\)/g;
-  const imports: string[] = [];
-  let match: RegExpExecArray | null;
-  while ((match = regex.exec(code)) !== null) {
-    imports.push(match[1]);
-  }
-  return imports;
-}
-
-function normalizePathParts(parts: string[]): string {
-  const stack: string[] = [];
-  for (const part of parts) {
-    if (part === "" || part === ".") continue;
-    if (part === "..") stack.pop();
-    else stack.push(part);
-  }
-  return stack.join("/");
-}
-
-function normalizeAbsolutePath(path: string): string {
-  const normalized = normalizePathParts(path.split("/"));
-  return normalized ? "/" + normalized : "/";
-}
-
 function resolveAbsoluteImportPath(
   currentAbsPath: string,
   importPath: string
@@ -103,7 +74,7 @@ function resolveAbsoluteImportPath(
 
 function collectAbsoluteImportsFromCode(
   code: string,
-  currentAbsPath?: string
+  currentAbsPath: string | undefined
 ): string[] {
   const out: string[] = [];
   const pushImport = (imp: string) => {
@@ -186,59 +157,13 @@ function writeFileWithDirs(fs: FS, path: string, content: string | Uint8Array) {
   fs.writeFile(path, content as any);
 }
 
-function toVmProjectPath(relPath: string): string {
-  const normalized = normalizePathParts(relPath.split("/"));
-  return normalized ? "/@/" + normalized : "/@";
-}
-
-function resolveProjectImportPathForVm(
-  currentRelPath: string,
-  importPath: string
-): string | null {
-  if (importPath.startsWith("/")) return importPath;
-  if (importPath.startsWith("@/")) {
-    const importParts = importPath.slice(2).split("/");
-    const normalized = normalizePathParts(importParts);
-    return normalized ? "/@/" + normalized : "/@";
-  }
-  const baseParts = currentRelPath.split("/").slice(0, -1);
-  const importParts = importPath.split("/");
-  const normalized = normalizePathParts([...baseParts, ...importParts]);
-  return normalized ? "/@/" + normalized : "/@";
-}
-
-function rewriteProjectImportsForVm(
-  code: string,
-  currentRelPath: string
-): string {
-  const rewritePath = (imp: string) =>
-    resolveProjectImportPathForVm(currentRelPath, imp) ?? imp;
-
-  const includeUseRegex = /(include|use)\s*<([^>]+)>/g;
-  const stlImportRegex = /import\s*\(\s*["']([^"']+\.stl)["']\s*\)/g;
-
-  let out = code.replace(includeUseRegex, (match, kw, imp) => {
-    const rewritten = rewritePath(imp);
-    if (!rewritten || rewritten === imp) return match;
-    return `${kw} <${rewritten}>`;
-  });
-
-  out = out.replace(stlImportRegex, (match, imp) => {
-    const rewritten = rewritePath(imp);
-    if (!rewritten || rewritten === imp) return match;
-    return match.replace(imp, rewritten);
-  });
-
-  return out;
-}
-
 /**
  * Write extra project files into the OpenSCAD VM file system.
  * Supports .scad files as strings and .stl files as Uint8Array binaries.
  */
 function addExtraFiles(
   fs: FS,
-  files?: Record<string, string | Uint8Array>
+  files: Record<string, string | Uint8Array> | undefined
 ): string[] {
   if (!files) return [];
   const written: string[] = [];
@@ -295,7 +220,10 @@ self.onmessage = async (event: MessageEvent<RenderRequest>) => {
     });
 
     const initialExternalImports = new Set<string>(externalImports ?? []);
-    for (const imp of collectAbsoluteImportsFromCode(part.ownSourceCode)) {
+    for (const imp of collectAbsoluteImportsFromCode(
+      part.ownSourceCode,
+      undefined
+    )) {
       initialExternalImports.add(imp);
     }
     const externalWritten = await addExternalFiles(

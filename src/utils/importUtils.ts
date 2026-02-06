@@ -12,7 +12,7 @@ export function extractImports(code: string): string[] {
   return imports;
 }
 
-function normalizePathParts(parts: string[]): string {
+export function normalizePathParts(parts: string[]): string {
   const stack: string[] = [];
   for (const part of parts) {
     if (part === "" || part === ".") continue;
@@ -22,7 +22,7 @@ function normalizePathParts(parts: string[]): string {
   return stack.join("/");
 }
 
-function normalizeAbsolutePath(path: string): string {
+export function normalizeAbsolutePath(path: string): string {
   const normalized = normalizePathParts(path.split("/"));
   return normalized ? "/" + normalized : "/";
 }
@@ -58,6 +58,56 @@ export function extractStlImports(code: string): string[] {
     imports.push(imp);
   }
   return imports;
+}
+
+export function toVmProjectPath(relPath: string): string {
+  const normalized = normalizePathParts(relPath.split("/"));
+  return normalized ? "/@/" + normalized : "/@";
+}
+
+export function resolveProjectImportPathForVm(
+  currentRelPath: string,
+  importPath: string
+): string | null {
+  // Contract: "@/..." is the only project-root marker. Absolute "/..." imports are external.
+  if (importPath.startsWith("/@/")) return importPath;
+  if (importPath.startsWith("@/")) {
+    const importParts = importPath.slice(2).split("/");
+    const normalized = normalizePathParts(importParts);
+    return normalized ? "/@/" + normalized : "/@";
+  }
+  if (importPath.startsWith("/")) {
+    return importPath;
+  }
+  const baseParts = currentRelPath.split("/").slice(0, -1);
+  const importParts = importPath.split("/");
+  const normalized = normalizePathParts([...baseParts, ...importParts]);
+  return normalized ? "/@/" + normalized : "/@";
+}
+
+export function rewriteProjectImportsForVm(
+  code: string,
+  currentRelPath: string
+): string {
+  const rewritePath = (imp: string) =>
+    resolveProjectImportPathForVm(currentRelPath, imp) ?? imp;
+
+  const includeUseRegex = /(include|use)\s*<([^>]+)>/g;
+  const stlImportRegex = /import\s*\(\s*["']([^"']+\.stl)["']\s*\)/g;
+
+  let out = code.replace(includeUseRegex, (match, kw, imp) => {
+    const rewritten = rewritePath(imp);
+    if (!rewritten || rewritten === imp) return match;
+    return `${kw} <${rewritten}>`;
+  });
+
+  out = out.replace(stlImportRegex, (match, imp) => {
+    const rewritten = rewritePath(imp);
+    if (!rewritten || rewritten === imp) return match;
+    return match.replace(imp, rewritten);
+  });
+
+  return out;
 }
 
 async function getFileHandleFromPath(
