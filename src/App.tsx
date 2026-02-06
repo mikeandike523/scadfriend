@@ -58,7 +58,7 @@ const resizeBarStyle = {
   backgroundSize: `${resizeBarSVGHelper.getComputedWidth()}px ${resizeBarSVGHelper.getComputedHeight()}px`,
 };
 
-const MAX_MESSAGES = 200;
+const MAX_MESSAGES: string | undefined = undefined;
 type OpenSCADPartWithSTL = OpenSCADPart & { stl?: Uint8Array };
 type PartSettings = { visible: boolean; exported: boolean };
 
@@ -319,8 +319,15 @@ export default function App() {
     }
   };
 
-  const log = (msg: string) =>
-    setMessages((m) => [...m, msg].slice(-MAX_MESSAGES));
+  // const log = (msg: string) =>
+  //   setMessages((m) => [...m, msg].slice(-MAX_MESSAGES));
+  const log = (msg: string) => {
+    if(MAX_MESSAGES !== undefined) {
+      setMessages((m) => [...m, msg].slice(-MAX_MESSAGES));
+    }
+    setMessages((m) => [...m, msg]);
+
+  }
   const clearLogs = () => setMessages([]);
 
   const selectProject = async () => {

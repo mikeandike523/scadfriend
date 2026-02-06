@@ -7,6 +7,7 @@ import {
   SerializableObject,
   toSerializableObject,
 } from "./utils/serialization";
+import { buildPathTree, formatPathTree } from "./utils/pathTree";
 
 // (Optional) Define the interface for an OpenSCAD part if not imported.
 export interface OpenSCADPart {
@@ -52,8 +53,7 @@ interface ErrorMessage {
   error: SerializableObject;
 }
 
-/**
- *
+
 function extractImports(code: string): string[] {
   const regex = /(include|use)\s*<([^>]+)>/g;
   const imports: string[] = [];
@@ -108,6 +108,7 @@ function collectAbsoluteImportsFromCode(
   const out: string[] = [];
   const pushImport = (imp: string) => {
     if (imp.startsWith("@/")) return;
+    if (imp.startsWith("/@/")) return;
     if (imp.startsWith("/")) {
       out.push(normalizeAbsolutePath(imp));
       return;
@@ -144,8 +145,8 @@ async function addExternalFiles(
   instance: OpenSCAD,
   paths: string[],
   log?: (message: string) => void
-) {
-  if (!paths.length) return;
+): Promise<string[]> {
+  if (!paths.length) return [];
   const fs = instance.FS as FS;
   const pending = paths.map((p) => normalizeAbsolutePath(p));
   const fetched = new Set<string>();
@@ -166,6 +167,8 @@ async function addExternalFiles(
       }
     }
   }
+
+  return Array.from(fetched.values());
 }
 
 function writeFileWithDirs(fs: FS, path: string, content: string | Uint8Array) {
@@ -183,15 +186,70 @@ function writeFileWithDirs(fs: FS, path: string, content: string | Uint8Array) {
   fs.writeFile(path, content as any);
 }
 
+function toVmProjectPath(relPath: string): string {
+  const normalized = normalizePathParts(relPath.split("/"));
+  return normalized ? "/@/" + normalized : "/@";
+}
+
+function resolveProjectImportPathForVm(
+  currentRelPath: string,
+  importPath: string
+): string | null {
+  if (importPath.startsWith("/")) return importPath;
+  if (importPath.startsWith("@/")) {
+    const importParts = importPath.slice(2).split("/");
+    const normalized = normalizePathParts(importParts);
+    return normalized ? "/@/" + normalized : "/@";
+  }
+  const baseParts = currentRelPath.split("/").slice(0, -1);
+  const importParts = importPath.split("/");
+  const normalized = normalizePathParts([...baseParts, ...importParts]);
+  return normalized ? "/@/" + normalized : "/@";
+}
+
+function rewriteProjectImportsForVm(
+  code: string,
+  currentRelPath: string
+): string {
+  const rewritePath = (imp: string) =>
+    resolveProjectImportPathForVm(currentRelPath, imp) ?? imp;
+
+  const includeUseRegex = /(include|use)\s*<([^>]+)>/g;
+  const stlImportRegex = /import\s*\(\s*["']([^"']+\.stl)["']\s*\)/g;
+
+  let out = code.replace(includeUseRegex, (match, kw, imp) => {
+    const rewritten = rewritePath(imp);
+    if (!rewritten || rewritten === imp) return match;
+    return `${kw} <${rewritten}>`;
+  });
+
+  out = out.replace(stlImportRegex, (match, imp) => {
+    const rewritten = rewritePath(imp);
+    if (!rewritten || rewritten === imp) return match;
+    return match.replace(imp, rewritten);
+  });
+
+  return out;
+}
+
 /**
  * Write extra project files into the OpenSCAD VM file system.
  * Supports .scad files as strings and .stl files as Uint8Array binaries.
  */
-function addExtraFiles(fs: FS, files?: Record<string, string | Uint8Array>) {
-  if (!files) return;
+function addExtraFiles(
+  fs: FS,
+  files?: Record<string, string | Uint8Array>
+): string[] {
+  if (!files) return [];
+  const written: string[] = [];
   for (const [p, c] of Object.entries(files)) {
-    writeFileWithDirs(fs, "/" + p, c);
+    const vmPath = toVmProjectPath(p);
+    const content =
+      typeof c === "string" ? rewriteProjectImportsForVm(c, p) : c;
+    writeFileWithDirs(fs, vmPath, content);
+    written.push(vmPath);
   }
+  return written;
 }
 
 // Manifold:  Ultra Fast
@@ -240,7 +298,7 @@ self.onmessage = async (event: MessageEvent<RenderRequest>) => {
     for (const imp of collectAbsoluteImportsFromCode(part.ownSourceCode)) {
       initialExternalImports.add(imp);
     }
-    await addExternalFiles(
+    const externalWritten = await addExternalFiles(
       instance,
       Array.from(initialExternalImports),
       (message) => sendLog(partName, message)
@@ -249,14 +307,26 @@ self.onmessage = async (event: MessageEvent<RenderRequest>) => {
     sendLog(partName, "OpenSCAD initialized.");
 
     sendLog(partName, "Writing input file...");
-    addExtraFiles(instance.FS as FS, extraFiles);
-    writeFileWithDirs(instance.FS as FS, "/" + path, part.ownSourceCode);
+    const projectWritten = addExtraFiles(instance.FS as FS, extraFiles);
+    const vmMainPath = toVmProjectPath(path);
+    const rewrittenMain = rewriteProjectImportsForVm(
+      part.ownSourceCode,
+      path
+    );
+    writeFileWithDirs(instance.FS as FS, vmMainPath, rewrittenMain);
+
+    const writtenPaths = [...externalWritten, ...projectWritten, vmMainPath];
+    if (writtenPaths.length) {
+      const tree = buildPathTree(writtenPaths);
+      const treeText = formatPathTree(tree);
+      sendLog(partName, `VM files written:\n${treeText}`);
+    }
 
     sendLog(partName, "Input file written.");
 
     sendLog(partName, `Performing render with ${backend} backend...`);
     const args = [
-      "/" + path,
+      vmMainPath,
       "--viewall",
       "--autocenter",
       "--render",
