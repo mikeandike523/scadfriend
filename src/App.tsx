@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import type { PointerEvent as ReactPointerEvent } from "react";
+import type { CSSProperties, PointerEvent as ReactPointerEvent } from "react";
 import { css, keyframes } from "@emotion/react";
 import Color from "color";
 import * as THREE from "three";
@@ -55,7 +55,7 @@ const resizeBarSVGHelper = new ResizeSvgHelper({
 });
 const resizeBarSVGUri = resizeBarSVGHelper.getDataUri("#000");
 
-const resizeBarStyle = {
+const resizeBarStyle:CSSProperties = {
   // Because the computed width and height include padding,
   // The tiling and centering end up pleasing
   width: `${resizeBarSVGHelper.getComputedWidth()}px`,
@@ -210,15 +210,16 @@ export default function App() {
     }
     let cancelled = false;
     async function loadWorkspace() {
+      if(!projectHandle) return;
       const state = await loadWorkspaceState(projectHandle.name);
       if (cancelled) return;
 
       if (state.layout) {
         const layout =
           typeof state.layout === "object" ? state.layout : null;
-        const fileBrowser = layout?.fileBrowser;
-        const editor = layout?.editor;
-        const viewer = layout?.viewer;
+        const fileBrowser = layout?.fileBrowser??0;
+        const editor = layout?.editor??0;
+        const viewer = layout?.viewer??0;
         const total = fileBrowser + editor + viewer;
         const valid =
           Number.isFinite(fileBrowser) &&
