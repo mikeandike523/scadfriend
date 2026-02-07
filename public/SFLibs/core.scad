@@ -178,3 +178,33 @@ module extrude_xz(h) {
             linear_extrude(height = h)
                 children();
 }
+
+// ---------- vector helpers ----------
+function v_sub(a,b) = [a[0]-b[0], a[1]-b[1], a[2]-b[2]];
+function v_len(v)   = sqrt(v[0]*v[0] + v[1]*v[1] + v[2]*v[2]);
+function v_xy(v)    = sqrt(v[0]*v[0] + v[1]*v[1]);
+
+// Two-point cylinder: from A to B, diameter d
+// facets: number of facets (default 64)
+// epsilon: tolerance for degenerate segments (default 1e-12)
+module two_point_cylinder(A, B, d, facets=64, epsilon=1e-12)
+{
+    v = v_sub(B, A);
+    L = v_len(v);
+
+    // Degenerate case: zero-length segment
+    if (L <= epsilon) {
+        // intentionally empty
+        // (or replace with: translate(A) sphere(d=d, $fn=facets); )
+    } else {
+        // OpenSCAD convention:
+        // rotate([x,y,z]) = Rx then Ry then Rz
+        // Align +Z with vector v
+        yaw   = atan2(v[1], v[0]);    // about Z (XY plane)
+        pitch = atan2(v_xy(v), v[2]); // about Y (ZX plane)
+
+        translate(A)
+            rotate([0, pitch, yaw])
+                cylinder(h=L, d=d, center=false, $fn=facets);
+    }
+}

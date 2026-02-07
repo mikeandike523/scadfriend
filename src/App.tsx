@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from "react";
+import type { PointerEvent as ReactPointerEvent } from "react";
 import { css, keyframes } from "@emotion/react";
 import Color from "color";
 import * as THREE from "three";
@@ -11,7 +12,12 @@ import "@fontsource/fira-code/600.css";
 import "@fontsource/fira-code/700.css";
 import "@fontsource/fira-code/index.css";
 
-import { FaHome, FaFileDownload } from "react-icons/fa";
+import {
+  FaHome,
+  FaFileDownload,
+  FaChevronDown,
+  FaChevronUp,
+} from "react-icons/fa";
 import { Button, Div, H1, I, Input, Label, P } from "style-props-html";
 
 import "./App.css";
@@ -32,6 +38,10 @@ import {
   storeDirectoryHandle,
   getStoredDirectoryHandle,
   clearStoredDirectoryHandle,
+  getFileHandleByPath,
+  loadWorkspaceState,
+  updateWorkspaceState,
+  warnOnce,
 } from "./utils/fsaUtils";
 import { saveVmDebugSnapshot } from "./utils/debugSnapshot";
 
@@ -50,6 +60,8 @@ const resizeBarStyle = {
   // The tiling and centering end up pleasing
   width: `${resizeBarSVGHelper.getComputedWidth()}px`,
   cursor: "col-resize",
+  touchAction: "none",
+  userSelect: "none",
   backgroundColor: "#e0f7ff",
   backgroundImage: `url("${resizeBarSVGUri}")`,
   backgroundRepeat: "repeat-y",
@@ -115,46 +127,69 @@ export default function App() {
   const [code, setCode] = useState("");
   const [isProcessing, setIsProcessing] = useState(false);
   const [renderedAtLeastOnce, setRenderedAtLeastOnce] = useState(false);
+  const [partsPanelOpen, setPartsPanelOpen] = useState(true);
   const completedModelRef = useRef<Record<string, OpenSCADPartWithSTL>>({});
   const [partSettings, setPartSettings] = useState<
     Record<string, PartSettings>
   >({});
 
   const editorTabAgent = useEditorTabAgent({ code, setCode });
+  const openFileHandleRef = useRef(editorTabAgent.openFileHandle);
+  const layoutSaveTimeoutRef = useRef<number | null>(null);
   const editorContainerRef = useRef<HTMLDivElement>(null);
   const viewerContainerRef = useRef<HTMLDivElement>(null);
 
   const FILE_BROWSER_WIDTH = 200;
-  // Split pane proportions (fr units) for CSS grid; viewer pane is fixed at 1fr
-  const resizingRef = useRef<"fileBrowser" | "editor" | null>(null);
+  // Split pane proportions for CSS grid; sum to 1
   const [fileBrowserFrac, setFileBrowserFrac] = useState<number>(0);
   const [editorFrac, setEditorFrac] = useState<number>(0);
-  // keep refs for latest proportions in mousemove handler
-  const fileBrowserFracRef = useRef<number>(fileBrowserFrac);
-  const editorFracRef = useRef<number>(editorFrac);
-  // keep refs in sync with state for use in mousemove handler
+  const [viewerFrac, setViewerFrac] = useState<number>(0);
+  const proportionsRef = useRef({
+    fileBrowser: fileBrowserFrac,
+    editor: editorFrac,
+    viewer: viewerFrac,
+  });
+  const pointerStateRef = useRef<{
+    which: "fileBrowser" | "editor";
+    startX: number;
+    start: { fileBrowser: number; editor: number; viewer: number };
+  } | null>(null);
   useEffect(() => {
-    fileBrowserFracRef.current = fileBrowserFrac;
-  }, [fileBrowserFrac]);
-  useEffect(() => {
-    editorFracRef.current = editorFrac;
-  }, [editorFrac]);
+    proportionsRef.current = {
+      fileBrowser: fileBrowserFrac,
+      editor: editorFrac,
+      viewer: viewerFrac,
+    };
+  }, [fileBrowserFrac, editorFrac, viewerFrac]);
   const [windowWidth, setWindowWidth] = useState<number | null>(null);
 
   const [projectHandle, setProjectHandle] =
     useState<FileSystemDirectoryHandle | null>(null);
+  const [workspaceLoaded, setWorkspaceLoaded] = useState(false);
 
   // Initialize pane proportions once on mount when we know window width
   useEffect(() => {
-    if (windowWidth && fileBrowserFrac === 0 && editorFrac === 0) {
-      setFileBrowserFrac(FILE_BROWSER_WIDTH / windowWidth);
-      setEditorFrac(0.5);
+    if (
+      windowWidth &&
+      fileBrowserFrac === 0 &&
+      editorFrac === 0 &&
+      viewerFrac === 0
+    ) {
+      const fb = FILE_BROWSER_WIDTH / windowWidth;
+      const totalFr = fb + 1.5;
+      setFileBrowserFrac(fb / totalFr);
+      setEditorFrac(0.5 / totalFr);
+      setViewerFrac(1 / totalFr);
     }
-  }, [windowWidth, fileBrowserFrac, editorFrac]);
+  }, [windowWidth, fileBrowserFrac, editorFrac, viewerFrac]);
 
   useEffect(() => {
     setWindowWidth(window.innerWidth);
   }, []);
+
+  useEffect(() => {
+    openFileHandleRef.current = editorTabAgent.openFileHandle;
+  }, [editorTabAgent.openFileHandle]);
 
   useEffect(() => {
     getStoredDirectoryHandle().then(async (h) => {
@@ -169,46 +204,192 @@ export default function App() {
   }, []);
 
   useEffect(() => {
-    const onMove = (e: MouseEvent) => {
-      const which = resizingRef.current;
-      if (!which) return;
-      const minPx = 100;
-      const barW = resizeBarSVGHelper.getComputedWidth();
-      const totalW = window.innerWidth;
-      const freeW = totalW - 2 * barW;
-      const fb = fileBrowserFracRef.current;
-      const ed = editorFracRef.current;
-      const totalFr = fb + ed + 1;
-      const unitPx = freeW / totalFr;
-      const fbPx = unitPx * fb;
-      if (which === "fileBrowser") {
-        const abs = Math.min(totalW - minPx, Math.max(minPx, e.clientX));
-        const newFrac = (abs * totalFr) / freeW;
-        fileBrowserFracRef.current = newFrac;
-        setFileBrowserFrac(newFrac);
-      } else if (which === "editor") {
-        const minAbs = fbPx + barW + minPx;
-        const abs = Math.min(totalW - minPx, Math.max(minAbs, e.clientX));
-        const relPx = abs - fbPx - barW;
-        const newFrac = (relPx * totalFr) / freeW;
-        editorFracRef.current = newFrac;
-        setEditorFrac(newFrac);
+    if (!projectHandle) {
+      setWorkspaceLoaded(false);
+      return;
+    }
+    let cancelled = false;
+    async function loadWorkspace() {
+      const state = await loadWorkspaceState(projectHandle.name);
+      if (cancelled) return;
+
+      if (state.layout) {
+        const layout =
+          typeof state.layout === "object" ? state.layout : null;
+        const fileBrowser = layout?.fileBrowser;
+        const editor = layout?.editor;
+        const viewer = layout?.viewer;
+        const total = fileBrowser + editor + viewer;
+        const valid =
+          Number.isFinite(fileBrowser) &&
+          Number.isFinite(editor) &&
+          Number.isFinite(viewer) &&
+          fileBrowser > 0 &&
+          editor > 0 &&
+          viewer > 0 &&
+          total > 0;
+        if (valid) {
+          const normalized = {
+            fileBrowser: fileBrowser / total,
+            editor: editor / total,
+            viewer: viewer / total,
+          };
+          setFileBrowserFrac(normalized.fileBrowser);
+          setEditorFrac(normalized.editor);
+          setViewerFrac(normalized.viewer);
+        } else {
+          warnOnce(
+            `workspace-layout-${projectHandle.name}`,
+            `Workspace state: invalid layout proportions for "${projectHandle.name}". Resetting layout.`
+          );
+          updateWorkspaceState(projectHandle.name, { layout: null });
+          setFileBrowserFrac(0);
+          setEditorFrac(0);
+          setViewerFrac(0);
+        }
+      }
+
+      const openFilePath =
+        typeof state.openFilePath === "string" ? state.openFilePath : null;
+      if (state.openFilePath && !openFilePath) {
+        warnOnce(
+          `workspace-openFile-${projectHandle.name}`,
+          `Workspace state: invalid open file for "${projectHandle.name}". Clearing open file.`
+        );
+        updateWorkspaceState(projectHandle.name, { openFilePath: null });
+      }
+      if (openFilePath) {
+        const handle = await getFileHandleByPath(
+          projectHandle,
+          openFilePath
+        );
+        if (cancelled) return;
+        if (handle) {
+          try {
+            // eslint-disable-next-line @typescript-eslint/no-explicit-any
+            const perm = await (handle as any).queryPermission?.({
+              mode: "read",
+            });
+            if (perm && perm !== "granted") {
+              warnOnce(
+                `workspace-openFile-perm-${projectHandle.name}`,
+                `Workspace state: missing permission to open "${openFilePath}" in "${projectHandle.name}". Clearing open file.`
+              );
+              updateWorkspaceState(projectHandle.name, { openFilePath: null });
+            } else {
+              await openFileHandleRef.current(handle, openFilePath);
+            }
+          } catch {
+            warnOnce(
+              `workspace-openFile-perm-${projectHandle.name}`,
+              `Workspace state: unable to verify permission for "${openFilePath}" in "${projectHandle.name}". Clearing open file.`
+            );
+            updateWorkspaceState(projectHandle.name, { openFilePath: null });
+          }
+        } else {
+          warnOnce(
+            `workspace-openFile-${projectHandle.name}`,
+            `Workspace state: missing file "${openFilePath}" in "${projectHandle.name}". Clearing open file.`
+          );
+          updateWorkspaceState(projectHandle.name, { openFilePath: null });
+        }
+      }
+
+      if (!cancelled) setWorkspaceLoaded(true);
+    }
+    loadWorkspace();
+    return () => {
+      cancelled = true;
+    };
+  }, [projectHandle]);
+
+  useEffect(() => {
+    if (!projectHandle || !workspaceLoaded) return;
+    if (fileBrowserFrac <= 0 || editorFrac <= 0 || viewerFrac <= 0) return;
+    if (layoutSaveTimeoutRef.current) {
+      window.clearTimeout(layoutSaveTimeoutRef.current);
+    }
+    layoutSaveTimeoutRef.current = window.setTimeout(() => {
+      updateWorkspaceState(projectHandle.name, {
+        layout: {
+          fileBrowser: fileBrowserFrac,
+          editor: editorFrac,
+          viewer: viewerFrac,
+        },
+      });
+    }, 200);
+    return () => {
+      if (layoutSaveTimeoutRef.current) {
+        window.clearTimeout(layoutSaveTimeoutRef.current);
+        layoutSaveTimeoutRef.current = null;
       }
     };
-    const stop = () => {
-      resizingRef.current = null;
-    };
-    window.addEventListener("mousemove", onMove);
-    window.addEventListener("mouseup", stop);
-    return () => {
-      window.removeEventListener("mousemove", onMove);
-      window.removeEventListener("mouseup", stop);
-    };
+  }, [fileBrowserFrac, editorFrac, viewerFrac, projectHandle, workspaceLoaded]);
+
+  useEffect(() => {
+    if (!projectHandle || !workspaceLoaded) return;
+    updateWorkspaceState(projectHandle.name, {
+      openFilePath: editorTabAgent.filePath ?? null,
+    });
+  }, [editorTabAgent.filePath, projectHandle, workspaceLoaded]);
+
+  const onPointerMove = useCallback(
+    (e: ReactPointerEvent<HTMLDivElement>) => {
+    const state = pointerStateRef.current;
+    if (!state) return;
+    const minPx = 100;
+    const barW = resizeBarSVGHelper.getComputedWidth();
+    const totalW = window.innerWidth;
+    const freeW = totalW - 2 * barW;
+    if (freeW <= 0) return;
+    const dx = e.clientX - state.startX;
+    const startFbPx = state.start.fileBrowser * freeW;
+    const startEdPx = state.start.editor * freeW;
+    const startViewPx = state.start.viewer * freeW;
+
+    if (state.which === "fileBrowser") {
+      const maxFbPx = freeW - startViewPx - minPx;
+      const newFbPx = Math.max(minPx, Math.min(maxFbPx, startFbPx + dx));
+      const newEdPx = freeW - startViewPx - newFbPx;
+      setFileBrowserFrac(newFbPx / freeW);
+      setEditorFrac(newEdPx / freeW);
+      setViewerFrac(startViewPx / freeW);
+    } else {
+      const maxEdPx = freeW - startFbPx - minPx;
+      const newEdPx = Math.max(minPx, Math.min(maxEdPx, startEdPx + dx));
+      const newViewPx = freeW - startFbPx - newEdPx;
+      setFileBrowserFrac(startFbPx / freeW);
+      setEditorFrac(newEdPx / freeW);
+      setViewerFrac(newViewPx / freeW);
+    }
   }, []);
 
-  const startResizing = useCallback((which: "fileBrowser" | "editor") => {
-    resizingRef.current = which;
-  }, []);
+  const startResizing = useCallback(
+    (which: "fileBrowser" | "editor") =>
+      (e: ReactPointerEvent<HTMLDivElement>) => {
+        e.preventDefault();
+        (e.currentTarget as HTMLElement).setPointerCapture(e.pointerId);
+        pointerStateRef.current = {
+          which,
+          startX: e.clientX,
+          start: { ...proportionsRef.current },
+        };
+      },
+    []
+  );
+
+  const stopResizing = useCallback(
+    (e: ReactPointerEvent<HTMLDivElement>) => {
+      if (!pointerStateRef.current) return;
+      try {
+        (e.currentTarget as HTMLElement).releasePointerCapture(e.pointerId);
+      } catch {
+        // ignore if capture was lost
+      }
+      pointerStateRef.current = null;
+    },
+    []
+  );
 
   const orbitControlsRef = useRef<OrbitControls | null>(null);
   const threeObjectsRef = useRef<ThreeHandles | null>(null);
@@ -572,7 +753,7 @@ export default function App() {
             height: "100vh",
             overflow: "hidden",
             display: "grid",
-            gridTemplateColumns: `${fileBrowserFrac}fr ${resizeBarSVGHelper.getComputedWidth()}px ${editorFrac}fr ${resizeBarSVGHelper.getComputedWidth()}px 1fr`,
+            gridTemplateColumns: `${fileBrowserFrac}fr ${resizeBarSVGHelper.getComputedWidth()}px ${editorFrac}fr ${resizeBarSVGHelper.getComputedWidth()}px ${viewerFrac}fr`,
           }}
         >
           <div
@@ -604,7 +785,10 @@ export default function App() {
           </div>
           <div
             style={resizeBarStyle}
-            onMouseDown={() => startResizing("fileBrowser")}
+            onPointerDown={startResizing("fileBrowser")}
+            onPointerMove={onPointerMove}
+            onPointerUp={stopResizing}
+            onPointerCancel={stopResizing}
           />
           <div
             ref={editorContainerRef}
@@ -622,7 +806,10 @@ export default function App() {
           </div>
           <div
             style={resizeBarStyle}
-            onMouseDown={() => startResizing("editor")}
+            onPointerDown={startResizing("editor")}
+            onPointerMove={onPointerMove}
+            onPointerUp={stopResizing}
+            onPointerCancel={stopResizing}
           />
           <div
             className="viewer-container"
@@ -642,7 +829,7 @@ export default function App() {
                 fontSize="150%"
                 onClick={() => renderModel("Manifold")}
               >
-                Preview
+                Render (Manifold)
               </Button>
               <Button
                 disabled={isProcessing}
@@ -650,58 +837,114 @@ export default function App() {
                 fontSize="150%"
                 onClick={() => renderModel("CGAL")}
               >
-                Render
+                Render (CGAL)
               </Button>
             </Div>
             <Div
               width="100%"
               display="grid"
-              gridTemplateColumns="1.5fr 3fr"
+              gridTemplateColumns="1fr"
               height="100%"
               overflow="hidden"
             >
-              <Div
-                background="white"
-                padding="8px"
-                display="flex"
-                flexDirection="column"
-                gap="8px"
-              >
-                {Object.keys(partSettings).length ? (
-                  Object.entries(partSettings).map(([name, s], i) => (
-                    <Div key={i} display="flex" alignItems="center" gap="0.7em">
-                      <Label
-                        display="flex"
-                        alignItems="center"
-                        gap="0.7em"
-                        color={!s.exported ? "#666" : undefined}
+              <Div background="#aaa" position="relative">
+                <Div
+                  position="absolute"
+                  top="8px"
+                  left="8px"
+                  zIndex={5}
+                  background="rgba(255, 255, 255, 0.92)"
+                  padding="8px"
+                  borderRadius="6px"
+                  boxShadow="0 2px 8px rgba(0, 0, 0, 0.2)"
+                  minWidth="220px"
+                  maxWidth="40%"
+                  maxHeight="70%"
+                  overflow="auto"
+                >
+                  <Div display="flex" alignItems="center" gap="8px">
+                    <Button
+                      width="1.5rem"
+                      height="1.5rem"
+                      onClick={() => setPartsPanelOpen(!partsPanelOpen)}
+                    >
+                      {partsPanelOpen ? (
+                        <FaChevronUp style={{ fontSize: "0.8rem" }} />
+                      ) : (
+                        <FaChevronDown style={{ fontSize: "0.8rem" }} />
+                      )}
+                    </Button>
+                    <H1
+                      fontSize="1rem"
+                      margin="0"
+                      lineHeight="1.2"
+                      color="#222"
+                    >
+                      Parts
+                    </H1>
+                    {!partsPanelOpen && (
+                      <Div
+                        background="#1e88e5"
+                        color="white"
+                        fontSize="0.75rem"
+                        padding="2px 6px"
+                        borderRadius="999px"
+                        lineHeight="1"
                       >
-                        <Input
-                          type="checkbox"
-                          checked={s.visible}
-                          onChange={() => {
-                            s.visible = !s.visible;
-                            setPartSettings({ ...partSettings });
-                          }}
-                        />
-                        {s.exported ? name : `${name}(ignored)`}
-                      </Label>
-                      {completedModelRef.current[name]?.stl && (
-                        <Button
-                          width="1.25rem"
-                          height="1.25rem"
-                          onClick={() => downloadPart(name)}
-                        >
-                          <FaFileDownload style={{ fontSize: "0.75rem" }} />
-                        </Button>
+                        {Object.keys(partSettings).length}
+                      </Div>
+                    )}
+                  </Div>
+                  {partsPanelOpen && (
+                    <Div
+                      marginTop="8px"
+                      display="flex"
+                      flexDirection="column"
+                      gap="8px"
+                    >
+                      {Object.keys(partSettings).length ? (
+                        Object.entries(partSettings).map(([name, s], i) => (
+                          <Div
+                            key={i}
+                            display="flex"
+                            alignItems="center"
+                            gap="0.7em"
+                          >
+                            <Label
+                              display="flex"
+                              alignItems="center"
+                              gap="0.7em"
+                              color={!s.exported ? "#666" : undefined}
+                            >
+                              <Input
+                                type="checkbox"
+                                checked={s.visible}
+                                onChange={() => {
+                                  s.visible = !s.visible;
+                                  setPartSettings({ ...partSettings });
+                                }}
+                              />
+                              {s.exported ? name : `${name}(ignored)`}
+                            </Label>
+                            {completedModelRef.current[name]?.stl && (
+                              <Button
+                                width="1.25rem"
+                                height="1.25rem"
+                                onClick={() => downloadPart(name)}
+                              >
+                                <FaFileDownload
+                                  style={{ fontSize: "0.75rem" }}
+                                />
+                              </Button>
+                            )}
+                          </Div>
+                        ))
+                      ) : (
+                        <I>No parts yet.</I>
                       )}
                     </Div>
-                  ))
-                ) : (
-                  <I>No parts yet.</I>
-                )}
-              </Div>
-              <Div background="#aaa" position="relative">
+                  )}
+                </Div>
                 <ThreeViewer
                   handleRef={threeObjectsRef}
                   controlsRef={orbitControlsRef}

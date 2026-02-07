@@ -3,6 +3,25 @@
 // including persisting a directory handle for future use.
 import { emitUiLog } from "./uiLogger";
 
+export type WorkspaceLayout = {
+  fileBrowser: number;
+  editor: number;
+  viewer: number;
+};
+
+export type WorkspaceState = {
+  expandedDirs?: string[];
+  openFilePath?: string | null;
+  layout?: WorkspaceLayout | null;
+};
+
+const WARN_ONCE_KEYS = new Set<string>();
+export function warnOnce(key: string, message: string) {
+  if (WARN_ONCE_KEYS.has(key)) return;
+  WARN_ONCE_KEYS.add(key);
+  console.warn(message);
+}
+
 export type OpenFilePickerOptions = {
   multiple?: boolean;
   types?: { description: string; accept: { [type: string]: string[] } }[];
@@ -253,11 +272,14 @@ export async function createNewFile(
 
 function openDB(): Promise<IDBDatabase> {
   return new Promise((resolve, reject) => {
-    const request = window.indexedDB.open("FileHandleDB", 1);
+    const request = window.indexedDB.open("FileHandleDB", 2);
     request.onupgradeneeded = () => {
       const db = request.result;
       if (!db.objectStoreNames.contains("handles")) {
         db.createObjectStore("handles");
+      }
+      if (!db.objectStoreNames.contains("workspace")) {
+        db.createObjectStore("workspace");
       }
     };
     request.onsuccess = () => resolve(request.result);
@@ -324,50 +346,110 @@ export async function getStoredDirectoryHandle(): Promise<FileSystemDirectoryHan
 }
 
 /**
- * Load the file-explorer state from localStorage.
+ * Load workspace state from IndexedDB scoped by the folder name.
  */
-export async function loadFileExplorerState(
-  root: FileSystemDirectoryHandle
-): Promise<{ expanded: string[] }> {
+export async function loadWorkspaceState(
+  rootName: string
+): Promise<WorkspaceState> {
   try {
-    const key = `fileExplorerState_${root.name}`;
-    const text = localStorage.getItem(key);
-    if (text) {
-      const data = JSON.parse(text);
-      if (Array.isArray(data.expanded)) {
-        return { expanded: data.expanded };
-      }
-    }
-    return { expanded: [] };
+    const db = await openDB();
+    const tx = db.transaction("workspace", "readonly");
+    const store = tx.objectStore("workspace");
+    const request = store.get(rootName);
+    return await new Promise((resolve, reject) => {
+      request.onsuccess = () => {
+        db.close();
+        resolve((request.result as WorkspaceState | undefined) ?? {});
+      };
+      request.onerror = () => {
+        db.close();
+        reject(request.error);
+      };
+    });
   } catch (error) {
     emitUiLog(
       "error",
-      `Error loading file-explorer state from localStorage: ${
+      `Error loading workspace state from IndexedDB: ${
         error instanceof Error ? error.message : String(error)
       }`
     );
-    return { expanded: [] };
+    return {};
   }
 }
 
 /**
- * Save the file-explorer state to localStorage.
+ * Save workspace state to IndexedDB scoped by the folder name.
  */
-export async function saveFileExplorerState(
-  root: FileSystemDirectoryHandle,
-  expanded: string[]
+export async function saveWorkspaceState(
+  rootName: string,
+  state: WorkspaceState
 ): Promise<void> {
   try {
-    const key = `fileExplorerState_${root.name}`;
-    localStorage.setItem(key, JSON.stringify({ expanded }));
+    const db = await openDB();
+    const tx = db.transaction("workspace", "readwrite");
+    const store = tx.objectStore("workspace");
+    const request = store.put(state, rootName);
+    await new Promise<void>((resolve, reject) => {
+      request.onsuccess = () => {
+        tx.oncomplete = () => {
+          db.close();
+          resolve();
+        };
+      };
+      request.onerror = () => {
+        db.close();
+        reject(request.error);
+      };
+      tx.onerror = () => {
+        db.close();
+        reject(new Error("Transaction failed"));
+      };
+    });
   } catch (error) {
     emitUiLog(
       "error",
-      `Error saving file-explorer state to localStorage: ${
+      `Error saving workspace state to IndexedDB: ${
         error instanceof Error ? error.message : String(error)
       }`
     );
   }
+}
+
+/**
+ * Update a subset of workspace state while preserving existing fields.
+ */
+export async function updateWorkspaceState(
+  rootName: string,
+  patch: WorkspaceState
+): Promise<void> {
+  const prev = await loadWorkspaceState(rootName);
+  const next: WorkspaceState = { ...prev, ...patch };
+  await saveWorkspaceState(rootName, next);
+}
+
+/**
+ * Resolve a file handle from a root directory and a path like "dir/file.scad".
+ */
+export async function getFileHandleByPath(
+  root: FileSystemDirectoryHandle,
+  path: string
+): Promise<FileSystemFileHandle | null> {
+  const parts = path.split("/").filter(Boolean);
+  if (!parts.length) return null;
+  let current: FileSystemDirectoryHandle = root;
+  for (let i = 0; i < parts.length; i++) {
+    const name = parts[i];
+    const isLast = i === parts.length - 1;
+    try {
+      if (isLast) {
+        return await current.getFileHandle(name);
+      }
+      current = await current.getDirectoryHandle(name);
+    } catch {
+      return null;
+    }
+  }
+  return null;
 }
 
 /**

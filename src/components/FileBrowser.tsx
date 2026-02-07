@@ -1,7 +1,11 @@
 import { useEffect, useState } from "react";
 import { Button, Div, Ul, Li } from "style-props-html";
 import { css } from "@emotion/react";
-import { loadFileExplorerState, saveFileExplorerState } from "../utils/fsaUtils";
+import {
+  loadWorkspaceState,
+  updateWorkspaceState,
+  warnOnce,
+} from "../utils/fsaUtils";
 
 export type FileNode = {
   name: string;
@@ -137,16 +141,27 @@ export default function FileBrowser({
     async function init() {
       const nodes = await readDirectory(rootHandle);
       setTree(nodes);
-      const { expanded } = await loadFileExplorerState(rootHandle);
+      const state = await loadWorkspaceState(rootHandle.name);
+      const expanded = Array.isArray(state.expandedDirs) ? state.expandedDirs : [];
       const validDirs = collectDirPaths(nodes);
-      setExpandedDirs(new Set(expanded.filter((p) => validDirs.has(p))));
+      const filtered = expanded.filter((p) => validDirs.has(p));
+      if (filtered.length !== expanded.length) {
+        warnOnce(
+          `workspace-expandedDirs-${rootHandle.name}`,
+          `Workspace state: some expanded directories are missing for "${rootHandle.name}". Resetting invalid entries.`
+        );
+        updateWorkspaceState(rootHandle.name, { expandedDirs: filtered });
+      }
+      setExpandedDirs(new Set(filtered));
     }
     init();
   }, [rootHandle]);
 
   // persist expanded state on changes
   useEffect(() => {
-    saveFileExplorerState(rootHandle, Array.from(expandedDirs));
+    updateWorkspaceState(rootHandle.name, {
+      expandedDirs: Array.from(expandedDirs),
+    });
   }, [expandedDirs, rootHandle]);
 
   const toggleDir = (path: string) => {
