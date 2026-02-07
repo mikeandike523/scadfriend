@@ -30,6 +30,7 @@
     "src/**/*.worker.ts",
     "src/utils/**/*.ts",
     "src/oscadUtil.ts",
+    "src/vite-env.d.ts"
   ],
   "exclude": [
     "src/utils/fsaUtils.ts"
