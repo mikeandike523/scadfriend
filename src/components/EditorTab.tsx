@@ -112,8 +112,7 @@ export default forwardRef<HTMLDivElement, EditorTabProps>(function EditorTab(
               agent.storeEditor(editor);
             }}
             onChange={(newValue) => {
-              agent.setCode(newValue ?? "");
-              agent.computeDirty(newValue ?? "");
+              agent.handleEditorChange(newValue ?? "");
             }}
             css={css`
               width: 100%;

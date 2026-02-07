@@ -129,9 +129,11 @@ function collectDirPaths(nodes: FileNode[]): Set<string> {
 export default function FileBrowser({
   rootHandle,
   onOpenFile,
+  openFilePath,
 }: {
   rootHandle: FileSystemDirectoryHandle;
   onOpenFile: (path: string, handle: FileSystemFileHandle) => void;
+  openFilePath?: string | null;
 }) {
   const [tree, setTree] = useState<FileNode[]>([]);
   const [expandedDirs, setExpandedDirs] = useState<Set<string>>(new Set());
@@ -143,8 +145,19 @@ export default function FileBrowser({
       setTree(nodes);
       const state = await loadWorkspaceState(rootHandle.name);
       const expanded = Array.isArray(state.expandedDirs) ? state.expandedDirs : [];
+      const openPath =
+        typeof state.openFilePath === "string" ? state.openFilePath : null;
       const validDirs = collectDirPaths(nodes);
       const filtered = expanded.filter((p) => validDirs.has(p));
+      const nextExpanded = new Set(filtered);
+      if (openPath) {
+        const parts = openPath.split("/").slice(0, -1);
+        let current = "";
+        for (const part of parts) {
+          current = current ? `${current}/${part}` : part;
+          if (validDirs.has(current)) nextExpanded.add(current);
+        }
+      }
       if (filtered.length !== expanded.length) {
         warnOnce(
           `workspace-expandedDirs-${rootHandle.name}`,
@@ -152,7 +165,7 @@ export default function FileBrowser({
         );
         updateWorkspaceState(rootHandle.name, { expandedDirs: filtered });
       }
-      setExpandedDirs(new Set(filtered));
+      setExpandedDirs(nextExpanded);
     }
     init();
   }, [rootHandle]);
@@ -175,6 +188,20 @@ export default function FileBrowser({
       return next;
     });
   };
+
+  useEffect(() => {
+    if (!openFilePath) return;
+    setExpandedDirs((prev) => {
+      const next = new Set(prev);
+      const parts = openFilePath.split("/").slice(0, -1);
+      let current = "";
+      for (const part of parts) {
+        current = current ? `${current}/${part}` : part;
+        next.add(current);
+      }
+      return next;
+    });
+  }, [openFilePath]);
 
   return (
     <Div padding="8px" overflow="auto" height="100%">

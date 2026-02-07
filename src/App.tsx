@@ -76,6 +76,69 @@ const WRITE_VM_DEBUG =
   typeof __WRITE_VM_DEBUG__ !== "undefined" && __WRITE_VM_DEBUG__;
 type OpenSCADPartWithSTL = OpenSCADPart & { stl?: Uint8Array };
 type PartSettings = { visible: boolean; exported: boolean };
+type PaneLayout = { fileBrowser: number; editor: number; viewer: number };
+
+const MIN_PANE_FRAC: PaneLayout = {
+  fileBrowser: 0.2,
+  editor: 0.2,
+  viewer: 0.2,
+};
+const DEFAULT_PANE_FRAC: PaneLayout = {
+  fileBrowser: 0.2,
+  editor: 0.4,
+  viewer: 0.4,
+};
+
+function normalizePaneLayout(layout?: Partial<PaneLayout> | null): PaneLayout {
+  if (!layout) return { ...DEFAULT_PANE_FRAC };
+  let fileBrowser = Number(layout.fileBrowser);
+  let editor = Number(layout.editor);
+  let viewer = Number(layout.viewer);
+  if (![fileBrowser, editor, viewer].every((v) => Number.isFinite(v))) {
+    return { ...DEFAULT_PANE_FRAC };
+  }
+  if (fileBrowser <= 0) fileBrowser = 0;
+  if (editor <= 0) editor = 0;
+  if (viewer <= 0) viewer = 0;
+
+  fileBrowser = Math.max(fileBrowser, MIN_PANE_FRAC.fileBrowser);
+  editor = Math.max(editor, MIN_PANE_FRAC.editor);
+  viewer = Math.max(viewer, MIN_PANE_FRAC.viewer);
+
+  const total = fileBrowser + editor + viewer;
+  if (total <= 0) return { ...DEFAULT_PANE_FRAC };
+
+  if (total > 1) {
+    const minSum =
+      MIN_PANE_FRAC.fileBrowser + MIN_PANE_FRAC.editor + MIN_PANE_FRAC.viewer;
+    const reducible =
+      (fileBrowser - MIN_PANE_FRAC.fileBrowser) +
+      (editor - MIN_PANE_FRAC.editor) +
+      (viewer - MIN_PANE_FRAC.viewer);
+    if (reducible > 0 && minSum < 1) {
+      const scale = (1 - minSum) / reducible;
+      fileBrowser =
+        MIN_PANE_FRAC.fileBrowser +
+        (fileBrowser - MIN_PANE_FRAC.fileBrowser) * scale;
+      editor =
+        MIN_PANE_FRAC.editor + (editor - MIN_PANE_FRAC.editor) * scale;
+      viewer =
+        MIN_PANE_FRAC.viewer + (viewer - MIN_PANE_FRAC.viewer) * scale;
+    } else {
+      const scale = 1 / total;
+      fileBrowser *= scale;
+      editor *= scale;
+      viewer *= scale;
+    }
+  } else if (total < 1) {
+    const scale = 1 / total;
+    fileBrowser *= scale;
+    editor *= scale;
+    viewer *= scale;
+  }
+
+  return { fileBrowser, editor, viewer };
+}
 
 function copySharedBufferToArrayBuffer(
   sharedBuffer: SharedArrayBuffer | ArrayBuffer
@@ -139,7 +202,6 @@ export default function App() {
   const editorContainerRef = useRef<HTMLDivElement>(null);
   const viewerContainerRef = useRef<HTMLDivElement>(null);
 
-  const FILE_BROWSER_WIDTH = 200;
   // Split pane proportions for CSS grid; sum to 1
   const [fileBrowserFrac, setFileBrowserFrac] = useState<number>(0);
   const [editorFrac, setEditorFrac] = useState<number>(0);
@@ -175,11 +237,10 @@ export default function App() {
       editorFrac === 0 &&
       viewerFrac === 0
     ) {
-      const fb = FILE_BROWSER_WIDTH / windowWidth;
-      const totalFr = fb + 1.5;
-      setFileBrowserFrac(fb / totalFr);
-      setEditorFrac(0.5 / totalFr);
-      setViewerFrac(1 / totalFr);
+      const normalized = normalizePaneLayout(DEFAULT_PANE_FRAC);
+      setFileBrowserFrac(normalized.fileBrowser);
+      setEditorFrac(normalized.editor);
+      setViewerFrac(normalized.viewer);
     }
   }, [windowWidth, fileBrowserFrac, editorFrac, viewerFrac]);
 
@@ -217,24 +278,12 @@ export default function App() {
       if (state.layout) {
         const layout =
           typeof state.layout === "object" ? state.layout : null;
-        const fileBrowser = layout?.fileBrowser??0;
-        const editor = layout?.editor??0;
-        const viewer = layout?.viewer??0;
-        const total = fileBrowser + editor + viewer;
+        const normalized = normalizePaneLayout(layout);
         const valid =
-          Number.isFinite(fileBrowser) &&
-          Number.isFinite(editor) &&
-          Number.isFinite(viewer) &&
-          fileBrowser > 0 &&
-          editor > 0 &&
-          viewer > 0 &&
-          total > 0;
+          normalized.fileBrowser > 0 &&
+          normalized.editor > 0 &&
+          normalized.viewer > 0;
         if (valid) {
-          const normalized = {
-            fileBrowser: fileBrowser / total,
-            editor: editor / total,
-            viewer: viewer / total,
-          };
           setFileBrowserFrac(normalized.fileBrowser);
           setEditorFrac(normalized.editor);
           setViewerFrac(normalized.viewer);
@@ -244,9 +293,10 @@ export default function App() {
             `Workspace state: invalid layout proportions for "${projectHandle.name}". Resetting layout.`
           );
           updateWorkspaceState(projectHandle.name, { layout: null });
-          setFileBrowserFrac(0);
-          setEditorFrac(0);
-          setViewerFrac(0);
+          const fallback = normalizePaneLayout(DEFAULT_PANE_FRAC);
+          setFileBrowserFrac(fallback.fileBrowser);
+          setEditorFrac(fallback.editor);
+          setViewerFrac(fallback.viewer);
         }
       }
 
@@ -338,26 +388,28 @@ export default function App() {
     (e: ReactPointerEvent<HTMLDivElement>) => {
     const state = pointerStateRef.current;
     if (!state) return;
-    const minPx = 100;
     const barW = resizeBarSVGHelper.getComputedWidth();
     const totalW = window.innerWidth;
     const freeW = totalW - 2 * barW;
     if (freeW <= 0) return;
+    const minFbPx = MIN_PANE_FRAC.fileBrowser * freeW;
+    const minEdPx = MIN_PANE_FRAC.editor * freeW;
+    const minViewPx = MIN_PANE_FRAC.viewer * freeW;
     const dx = e.clientX - state.startX;
     const startFbPx = state.start.fileBrowser * freeW;
     const startEdPx = state.start.editor * freeW;
     const startViewPx = state.start.viewer * freeW;
 
     if (state.which === "fileBrowser") {
-      const maxFbPx = freeW - startViewPx - minPx;
-      const newFbPx = Math.max(minPx, Math.min(maxFbPx, startFbPx + dx));
+      const maxFbPx = freeW - startViewPx - minEdPx;
+      const newFbPx = Math.max(minFbPx, Math.min(maxFbPx, startFbPx + dx));
       const newEdPx = freeW - startViewPx - newFbPx;
       setFileBrowserFrac(newFbPx / freeW);
       setEditorFrac(newEdPx / freeW);
       setViewerFrac(startViewPx / freeW);
     } else {
-      const maxEdPx = freeW - startFbPx - minPx;
-      const newEdPx = Math.max(minPx, Math.min(maxEdPx, startEdPx + dx));
+      const maxEdPx = freeW - startFbPx - minViewPx;
+      const newEdPx = Math.max(minEdPx, Math.min(maxEdPx, startEdPx + dx));
       const newViewPx = freeW - startFbPx - newEdPx;
       setFileBrowserFrac(startFbPx / freeW);
       setEditorFrac(newEdPx / freeW);
@@ -781,6 +833,7 @@ export default function App() {
               <FileBrowser
                 rootHandle={projectHandle}
                 onOpenFile={openFileFromBrowser}
+                openFilePath={editorTabAgent.filePath}
               />
             </div>
           </div>

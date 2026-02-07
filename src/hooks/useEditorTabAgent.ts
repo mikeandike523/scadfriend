@@ -49,6 +49,7 @@ export interface EditorTabAgent {
   setFileIsLoaded: Dispatch<SetStateAction<boolean>>;
   storeEditor: (editor: MonacoEditorInterface) => void;
   computeDirty: (newCode: string) => void;
+  handleEditorChange: (newCode: string) => void;
   openFileHandle: (
     handle: FileSystemFileHandle,
     path: string
@@ -80,6 +81,7 @@ export default function useEditorTabAgent({
   const [filePath, setFilePath] = useState<string | null>(null);
   const editorRef = useRef<MonacoEditorInterface | null>(null);
   const [editorLoaded, setEditorLoaded] = useState(false);
+  const suppressNextChangeRef = useRef(false);
 
 
 
@@ -103,9 +105,27 @@ export default function useEditorTabAgent({
     }
   }
 
+  const handleEditorChange = (newValue: string) => {
+    if (suppressNextChangeRef.current) {
+      suppressNextChangeRef.current = false;
+      return;
+    }
+    setCode(newValue);
+    computeDirty(newValue);
+  };
+
   const storeEditor = (editor: MonacoEditorInterface) => {
     editorRef.current = editor;
   };
+
+  const setEditorValue = (value: string) => {
+    suppressNextChangeRef.current = true;
+    editorRef.current?.setValue(value);
+    window.setTimeout(() => {
+      suppressNextChangeRef.current = false;
+    }, 0);
+  };
+
   const openFileHandle = async (
     handle: FileSystemFileHandle,
     path: string
@@ -120,7 +140,7 @@ export default function useEditorTabAgent({
     setFileIsLoaded(true);
     setIsNewFile(false);
     setFilePath(path);
-    editorRef.current?.setValue(content);
+    setEditorValue(content);
     await storeFileHandle(handle);
   };
 
@@ -149,7 +169,7 @@ export default function useEditorTabAgent({
     setIsNewFile(false);
      setFilePath(null);
     fileRef.current = null;
-    editorRef.current?.setValue("");
+    setEditorValue("");
     await deleteStoredFileHandle();
   };
 
@@ -206,6 +226,7 @@ export default function useEditorTabAgent({
     setFileIsLoaded,
     storeEditor,
     computeDirty,
+    handleEditorChange,
     openFileHandle,
     saveCurrentFile,
     closeFile,
