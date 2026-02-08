@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import { Button, Div, Ul, Li } from "style-props-html";
 import { css } from "@emotion/react";
 import {
+  clearWorkspaceState,
   loadWorkspaceState,
   updateWorkspaceState,
   warnOnce,
@@ -38,24 +39,39 @@ interface FileNodeViewProps {
   onOpen: (path: string, handle: FileSystemFileHandle) => void;
   expandedDirs: Set<string>;
   toggleDir: (path: string) => void;
+  selectedPath?: string | null;
 }
-function FileNodeView({ node, onOpen, expandedDirs, toggleDir }: FileNodeViewProps) {
+function FileNodeView({
+  node,
+  onOpen,
+  expandedDirs,
+  toggleDir,
+  selectedPath,
+}: FileNodeViewProps) {
   if (node.kind === "file") {
+    const isSelected = selectedPath === node.path;
     return (
       <Li>
         <Button
           display="block"
           width="100%"
           textAlign="left"
-          background="none"
+          background={isSelected ? "#e6f4ff" : "none"}
+          color={isSelected ? "#0b4aa2" : "inherit"}
+          fontWeight={isSelected ? "600" : "normal"}
           border="none"
+          borderRadius="4px"
           padding="4px"
           css={css`
             white-space: nowrap;
             overflow: hidden;
             text-overflow: ellipsis;
+            &:hover {
+              background: ${isSelected ? "#d6ebff" : "#f5f5f5"};
+            }
           `}
           onClick={() => onOpen(node.path, node.handle as FileSystemFileHandle)}
+          aria-current={isSelected ? "page" : undefined}
         >
           {node.name}
         </Button>
@@ -102,6 +118,7 @@ function FileNodeView({ node, onOpen, expandedDirs, toggleDir }: FileNodeViewPro
               onOpen={onOpen}
               expandedDirs={expandedDirs}
               toggleDir={toggleDir}
+              selectedPath={selectedPath}
             />
           ))}
         </Ul>
@@ -137,10 +154,12 @@ export default function FileBrowser({
 }) {
   const [tree, setTree] = useState<FileNode[]>([]);
   const [expandedDirs, setExpandedDirs] = useState<Set<string>>(new Set());
+  const [expandedReady, setExpandedReady] = useState(false);
 
   // initialize directory tree and expanded state from persisted storage
   useEffect(() => {
     async function init() {
+      setExpandedReady(false);
       const nodes = await readDirectory(rootHandle);
       setTree(nodes);
       const state = await loadWorkspaceState(rootHandle.name);
@@ -166,16 +185,18 @@ export default function FileBrowser({
         updateWorkspaceState(rootHandle.name, { expandedDirs: filtered });
       }
       setExpandedDirs(nextExpanded);
+      setExpandedReady(true);
     }
     init();
   }, [rootHandle]);
 
   // persist expanded state on changes
   useEffect(() => {
+    if (!expandedReady) return;
     updateWorkspaceState(rootHandle.name, {
       expandedDirs: Array.from(expandedDirs),
     });
-  }, [expandedDirs, rootHandle]);
+  }, [expandedDirs, expandedReady, rootHandle]);
 
   const toggleDir = (path: string) => {
     setExpandedDirs((prev) => {
@@ -204,18 +225,37 @@ export default function FileBrowser({
   }, [openFilePath]);
 
   return (
-    <Div padding="8px" overflow="auto" height="100%">
-      <Ul listStyleType="none" padding="0" margin="0">
-        {tree.map((node) => (
-          <FileNodeView
-            key={node.path}
-            node={node}
-            onOpen={onOpenFile}
-            expandedDirs={expandedDirs}
-            toggleDir={toggleDir}
-          />
-        ))}
-      </Ul>
+    <Div padding="8px" height="100%" display="flex" flexDirection="column">
+      <Div flex="1 1 auto" overflow="auto">
+        <Ul listStyleType="none" padding="0" margin="0">
+          {tree.map((node) => (
+            <FileNodeView
+              key={node.path}
+              node={node}
+              onOpen={onOpenFile}
+              expandedDirs={expandedDirs}
+              toggleDir={toggleDir}
+              selectedPath={openFilePath ?? null}
+            />
+          ))}
+        </Ul>
+      </Div>
+      <Div paddingTop="8px">
+        <Button
+          width="100%"
+          border="1px solid #d0d0d0"
+          borderRadius="6px"
+          padding="6px"
+          background="#fff7f7"
+          color="#9b1c1c"
+          onClick={async () => {
+            await clearWorkspaceState(rootHandle.name);
+            window.location.reload();
+          }}
+        >
+          Clear Workspace State
+        </Button>
+      </Div>
     </Div>
   );
 }

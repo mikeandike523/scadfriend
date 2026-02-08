@@ -13,6 +13,8 @@ export type WorkspaceState = {
   expandedDirs?: string[];
   openFilePath?: string | null;
   layout?: WorkspaceLayout | null;
+  scrollPositions?: Record<string, number>;
+  cursorPositions?: Record<string, { lineNumber: number; column: number }>;
 };
 
 const WARN_ONCE_KEYS = new Set<string>();
@@ -427,6 +429,39 @@ export async function updateWorkspaceState(
   await saveWorkspaceState(rootName, next);
 }
 
+export async function updateWorkspaceScrollPosition(
+  rootName: string,
+  filePath: string,
+  scrollTop: number
+): Promise<void> {
+  const prev = await loadWorkspaceState(rootName);
+  const next: WorkspaceState = {
+    ...prev,
+    scrollPositions: {
+      ...(prev.scrollPositions ?? {}),
+      [filePath]: scrollTop,
+    },
+  };
+  await saveWorkspaceState(rootName, next);
+}
+
+export async function updateWorkspaceCursorPosition(
+  rootName: string,
+  filePath: string,
+  lineNumber: number,
+  column: number
+): Promise<void> {
+  const prev = await loadWorkspaceState(rootName);
+  const next: WorkspaceState = {
+    ...prev,
+    cursorPositions: {
+      ...(prev.cursorPositions ?? {}),
+      [filePath]: { lineNumber, column },
+    },
+  };
+  await saveWorkspaceState(rootName, next);
+}
+
 /**
  * Resolve a file handle from a root directory and a path like "dir/file.scad".
  */
@@ -463,4 +498,36 @@ export async function clearStoredDirectoryHandle(): Promise<void> {
     request.onblocked = () =>
       emitUiLog("warn", "clearStoredDirectoryHandle: deleteDatabase blocked");
   });
+}
+
+export async function clearWorkspaceState(rootName: string): Promise<void> {
+  try {
+    const db = await openDB();
+    const tx = db.transaction("workspace", "readwrite");
+    const store = tx.objectStore("workspace");
+    const request = store.delete(rootName);
+    await new Promise<void>((resolve, reject) => {
+      request.onsuccess = () => {
+        tx.oncomplete = () => {
+          db.close();
+          resolve();
+        };
+      };
+      request.onerror = () => {
+        db.close();
+        reject(request.error);
+      };
+      tx.onerror = () => {
+        db.close();
+        reject(new Error("Transaction failed"));
+      };
+    });
+  } catch (error) {
+    emitUiLog(
+      "error",
+      `Error clearing workspace state from IndexedDB: ${
+        error instanceof Error ? error.message : String(error)
+      }`
+    );
+  }
 }

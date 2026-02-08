@@ -58,6 +58,8 @@ export interface EditorTabAgent {
   closeFile: () => Promise<void>;
   /** Force the Monaco editor to relayout */
   layoutEditor: () => void;
+  setScrollTop: (scrollTop: number) => void;
+  setCursorPosition: (lineNumber: number, column: number) => void;
 }
 
 const isMac = () => {
@@ -67,9 +69,13 @@ const isMac = () => {
 export default function useEditorTabAgent({
   code,
   setCode,
+  onScrollChange,
+  onCursorChange,
 }: {
   code: string;
   setCode: Dispatch<SetStateAction<string>>;
+  onScrollChange?: (filePath: string, scrollTop: number) => void;
+  onCursorChange?: (filePath: string, lineNumber: number, column: number) => void;
 }): EditorTabAgent {
   const fileRef = useRef<FileSystemFileHandle | null>(null);
   const [isNewFile, setIsNewFile] = useState(false);
@@ -82,6 +88,10 @@ export default function useEditorTabAgent({
   const editorRef = useRef<MonacoEditorInterface | null>(null);
   const [editorLoaded, setEditorLoaded] = useState(false);
   const suppressNextChangeRef = useRef(false);
+  const pendingScrollTopRef = useRef<number | null>(null);
+  const pendingCursorRef = useRef<{ lineNumber: number; column: number } | null>(
+    null
+  );
 
 
 
@@ -179,6 +189,78 @@ export default function useEditorTabAgent({
     }
   }, []);
 
+  const setScrollTop = useCallback((scrollTop: number) => {
+    if (editorRef.current) {
+      editorRef.current.setScrollTop(scrollTop);
+    } else {
+      pendingScrollTopRef.current = scrollTop;
+    }
+  }, []);
+
+  const setCursorPosition = useCallback(
+    (lineNumber: number, column: number) => {
+      if (editorRef.current) {
+        editorRef.current.setPosition({ lineNumber, column });
+        editorRef.current.revealPositionInCenterIfOutsideViewport({
+          lineNumber,
+          column,
+        });
+      } else {
+        pendingCursorRef.current = { lineNumber, column };
+      }
+    },
+    []
+  );
+
+  useEffect(() => {
+    if (!editorLoaded) return;
+    if (pendingScrollTopRef.current === null) return;
+    if (!editorRef.current) return;
+    editorRef.current.setScrollTop(pendingScrollTopRef.current);
+    pendingScrollTopRef.current = null;
+  }, [editorLoaded, filePath]);
+
+  useEffect(() => {
+    if (!editorLoaded) return;
+    if (!pendingCursorRef.current) return;
+    if (!editorRef.current) return;
+    const { lineNumber, column } = pendingCursorRef.current;
+    editorRef.current.setPosition({ lineNumber, column });
+    editorRef.current.revealPositionInCenterIfOutsideViewport({
+      lineNumber,
+      column,
+    });
+    pendingCursorRef.current = null;
+  }, [editorLoaded, filePath]);
+
+  useEffect(() => {
+    if (!editorLoaded || !editorRef.current || !onScrollChange) return;
+    const editor = editorRef.current;
+    const disposable = editor.onDidScrollChange(() => {
+      if (!filePath) return;
+      onScrollChange(filePath, editor.getScrollTop());
+    });
+    return () => {
+      disposable.dispose();
+    };
+  }, [editorLoaded, onScrollChange, filePath]);
+
+  useEffect(() => {
+    if (!editorLoaded || !editorRef.current || !onCursorChange) return;
+    const editor = editorRef.current;
+    const disposable = editor.onDidChangeCursorPosition((event) => {
+      if (!filePath) return;
+      onCursorChange(
+        filePath,
+        event.position.lineNumber,
+        event.position.column
+      );
+    });
+    return () => {
+      disposable.dispose();
+    };
+  }, [editorLoaded, onCursorChange, filePath]);
+
   const onCtrlS = useCallback(() => {
     const canSave= editorLoaded && dirty && (fileIsLoaded || isNewFile)
     if(canSave) {
@@ -231,5 +313,7 @@ export default function useEditorTabAgent({
     saveCurrentFile,
     closeFile,
     layoutEditor,
+    setScrollTop,
+    setCursorPosition,
   };
 }

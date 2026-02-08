@@ -41,6 +41,8 @@ import {
   getFileHandleByPath,
   loadWorkspaceState,
   updateWorkspaceState,
+  updateWorkspaceScrollPosition,
+  updateWorkspaceCursorPosition,
   warnOnce,
 } from "./utils/fsaUtils";
 import { saveVmDebugSnapshot } from "./utils/debugSnapshot";
@@ -196,7 +198,35 @@ export default function App() {
     Record<string, PartSettings>
   >({});
 
-  const editorTabAgent = useEditorTabAgent({ code, setCode });
+  const scrollSaveTimeoutRef = useRef<number | null>(null);
+  const cursorSaveTimeoutRef = useRef<number | null>(null);
+  const editorTabAgent = useEditorTabAgent({
+    code,
+    setCode,
+    onScrollChange: (filePath, scrollTop) => {
+      if (!projectHandle || !workspaceLoaded) return;
+      if (scrollSaveTimeoutRef.current) {
+        window.clearTimeout(scrollSaveTimeoutRef.current);
+      }
+      scrollSaveTimeoutRef.current = window.setTimeout(() => {
+        updateWorkspaceScrollPosition(projectHandle.name, filePath, scrollTop);
+      }, 200);
+    },
+    onCursorChange: (filePath, lineNumber, column) => {
+      if (!projectHandle || !workspaceLoaded) return;
+      if (cursorSaveTimeoutRef.current) {
+        window.clearTimeout(cursorSaveTimeoutRef.current);
+      }
+      cursorSaveTimeoutRef.current = window.setTimeout(() => {
+        updateWorkspaceCursorPosition(
+          projectHandle.name,
+          filePath,
+          lineNumber,
+          column
+        );
+      }, 200);
+    },
+  });
   const openFileHandleRef = useRef(editorTabAgent.openFileHandle);
   const layoutSaveTimeoutRef = useRef<number | null>(null);
   const editorContainerRef = useRef<HTMLDivElement>(null);
@@ -382,6 +412,29 @@ export default function App() {
     updateWorkspaceState(projectHandle.name, {
       openFilePath: editorTabAgent.filePath ?? null,
     });
+  }, [editorTabAgent.filePath, projectHandle, workspaceLoaded]);
+
+  useEffect(() => {
+    if (!projectHandle || !workspaceLoaded || !editorTabAgent.filePath) return;
+    let cancelled = false;
+    loadWorkspaceState(projectHandle.name).then((state) => {
+      if (cancelled) return;
+      const scrollTop = state.scrollPositions?.[editorTabAgent.filePath!];
+      if (typeof scrollTop === "number") {
+        editorTabAgent.setScrollTop(scrollTop);
+      }
+      const cursor = state.cursorPositions?.[editorTabAgent.filePath!];
+      if (
+        cursor &&
+        typeof cursor.lineNumber === "number" &&
+        typeof cursor.column === "number"
+      ) {
+        editorTabAgent.setCursorPosition(cursor.lineNumber, cursor.column);
+      }
+    });
+    return () => {
+      cancelled = true;
+    };
   }, [editorTabAgent.filePath, projectHandle, workspaceLoaded]);
 
   const onPointerMove = useCallback(
