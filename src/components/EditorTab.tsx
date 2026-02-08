@@ -129,7 +129,7 @@ export default forwardRef<HTMLDivElement, EditorTabProps>(function EditorTab(
               minimap: { enabled: false },
             }}
             defaultLanguage="openscad"
-            defaultValue={""}
+            value={agent.code}
             theme="openscad-theme"
           />
         )}
