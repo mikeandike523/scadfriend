@@ -1,0 +1,108 @@
+TAB SYSTEM SPECIFICATION v1.0
+==============================
+Date: 2026-02-11
+Status: Approved by user
+
+1. TAB TYPES
+-------------
+- Preview tab: Opened by SINGLE-CLICK in file explorer. Name in italics.
+  Only ONE preview tab can exist at a time.
+- Permanent tab: Opened by DOUBLE-CLICK in file explorer, or by EDITING
+  a preview tab (typing promotes it). Name in normal text.
+
+2. PER-TAB STATE
+-----------------
+Each tab maintains:
+  - filePath (string, relative to project root)
+  - filename (string)
+  - fileHandle (FileSystemFileHandle)
+  - code (string, current editor content)
+  - lastLoadedCode (string, content at last save/load, for dirty comparison)
+  - dirty (boolean, code !== lastLoadedCode)
+  - isPreview (boolean)
+  - scrollTop (number)
+  - cursorPosition ({ lineNumber, column })
+  - selections (Selection[], highlight/selection ranges)
+
+3. FILE OPENING FROM EXPLORER
+------------------------------
+SINGLE-CLICK:
+  a) File already open in ANY tab (preview or permanent) -> switch to it
+  b) Preview tab already exists for a DIFFERENT file -> close old preview,
+     open new preview tab inserted AFTER the currently active tab.
+     Persist old preview's scroll/cursor/selection to IndexedDB before closing.
+  c) Preview tab IS the active tab -> reuse in place (no position change)
+  d) No preview tab exists -> create new preview tab AFTER the active tab
+
+DOUBLE-CLICK:
+  a) File already open as PERMANENT tab -> switch to it
+  b) File already open as PREVIEW tab -> promote to permanent (italic -> normal)
+  c) Otherwise -> open as new PERMANENT tab AFTER the active tab.
+     (Existing preview tab for a different file remains as-is)
+
+4. PREVIEW-TO-PERMANENT PROMOTION
+-----------------------------------
+Triggers:
+  - User types/edits in the preview tab
+  - User double-clicks the file in the explorer
+Visual change: tab name italic -> normal
+
+5. SINGLE MONACO EDITOR INSTANCE
+----------------------------------
+- Only one <Editor> component exists in the DOM
+- On tab switch:
+  1. Snapshot outgoing tab: scroll, cursor, selections
+  2. Swap editor content (setValue)
+  3. Restore incoming tab: scroll, cursor, selections
+
+6. TAB CLOSE BEHAVIOR
+-----------------------
+- Each tab has an (x) close button
+- Clean tab: closes immediately
+- Dirty tab: prompt Save / Don't Save / Cancel
+- Activation after close: tab to the RIGHT; if rightmost, tab to the LEFT
+- Last tab closed -> "No File Selected" state
+
+7. DIRTY STATE
+---------------
+- dirty = (code !== lastLoadedCode)
+- Editing back to lastLoadedCode clears dirty
+- Saving sets lastLoadedCode = code, clears dirty
+- Visual: asterisk or dot on tab
+
+8. INDEXEDDB PERSISTENCE (WorkspaceState)
+------------------------------------------
+New/changed fields:
+  - openTabs: Array<{ path: string, isPreview: boolean }>
+  - activeTabIndex: number
+  - scrollPositions: Record<string, number>         (keyed by filePath)
+  - cursorPositions: Record<string, {lineNumber, column}> (keyed by filePath)
+  - selections: Record<string, Selection[]>         (keyed by filePath)
+
+Removed:
+  - openFilePath (replaced by openTabs + activeTabIndex)
+
+On app reload:
+  - Resolve all tab paths via getFileHandleByPath()
+  - Re-read contents from disk
+  - Restore active tab + viewport state
+  - Failed resolution: warnOnce, drop tab, persist cleaned state
+
+9. SCROLL/CURSOR/SELECTION RESTORATION
+----------------------------------------
+- Persisted per filePath (not per tab instance)
+- Restored on: tab switch, app reload
+- Debounced writes to IndexedDB (200ms)
+
+10. FILE BROWSER CHANGES
+--------------------------
+- Single-click: fires onOpenFile (preview open)
+- Double-click: fires onOpenFilePermanent (permanent open)
+- Active tab's file gets highlight in browser
+
+FILES TO MODIFY:
+  1. src/hooks/useEditorTabAgent.ts  - Heavy rewrite (tab manager)
+  2. src/components/EditorTab.tsx     - Add tab bar UI
+  3. src/App.tsx                      - Tab routing, persistence orchestration
+  4. src/utils/fsaUtils.ts            - WorkspaceState type + selection helpers
+  5. src/components/FileBrowser.tsx    - Add double-click handler

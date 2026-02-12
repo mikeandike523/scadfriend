@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { Button, Div, Ul, Li } from "style-props-html";
 import { css } from "@emotion/react";
 import {
@@ -37,6 +37,7 @@ async function readDirectory(
 interface FileNodeViewProps {
   node: FileNode;
   onOpen: (path: string, handle: FileSystemFileHandle) => void;
+  onOpenPermanent: (path: string, handle: FileSystemFileHandle) => void;
   expandedDirs: Set<string>;
   toggleDir: (path: string) => void;
   selectedPath?: string | null;
@@ -44,10 +45,12 @@ interface FileNodeViewProps {
 function FileNodeView({
   node,
   onOpen,
+  onOpenPermanent,
   expandedDirs,
   toggleDir,
   selectedPath,
 }: FileNodeViewProps) {
+  const clickTimerRef = useRef<number | null>(null);
   if (node.kind === "file") {
     const isSelected = selectedPath === node.path;
     return (
@@ -70,7 +73,22 @@ function FileNodeView({
               background: ${isSelected ? "#d6ebff" : "#f5f5f5"};
             }
           `}
-          onClick={() => onOpen(node.path, node.handle as FileSystemFileHandle)}
+          onClick={() => {
+            // Delay single-click to distinguish from double-click
+            if (clickTimerRef.current !== null) return;
+            clickTimerRef.current = window.setTimeout(() => {
+              clickTimerRef.current = null;
+              onOpen(node.path, node.handle as FileSystemFileHandle);
+            }, 200);
+          }}
+          onDoubleClick={() => {
+            // Cancel pending single-click
+            if (clickTimerRef.current !== null) {
+              window.clearTimeout(clickTimerRef.current);
+              clickTimerRef.current = null;
+            }
+            onOpenPermanent(node.path, node.handle as FileSystemFileHandle);
+          }}
           aria-current={isSelected ? "page" : undefined}
         >
           {node.name}
@@ -116,6 +134,7 @@ function FileNodeView({
               key={child.path}
               node={child}
               onOpen={onOpen}
+              onOpenPermanent={onOpenPermanent}
               expandedDirs={expandedDirs}
               toggleDir={toggleDir}
               selectedPath={selectedPath}
@@ -146,10 +165,12 @@ function collectDirPaths(nodes: FileNode[]): Set<string> {
 export default function FileBrowser({
   rootHandle,
   onOpenFile,
+  onOpenFilePermanent,
   openFilePath,
 }: {
   rootHandle: FileSystemDirectoryHandle;
   onOpenFile: (path: string, handle: FileSystemFileHandle) => void;
+  onOpenFilePermanent: (path: string, handle: FileSystemFileHandle) => void;
   openFilePath?: string | null;
 }) {
   const [tree, setTree] = useState<FileNode[]>([]);
@@ -233,6 +254,7 @@ export default function FileBrowser({
               key={node.path}
               node={node}
               onOpen={onOpenFile}
+              onOpenPermanent={onOpenFilePermanent}
               expandedDirs={expandedDirs}
               toggleDir={toggleDir}
               selectedPath={openFilePath ?? null}

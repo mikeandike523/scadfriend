@@ -24,7 +24,7 @@ import "./App.css";
 
 import EditorTab from "./components/EditorTab";
 import FileBrowser from "./components/FileBrowser";
-import useEditorTabAgent from "./hooks/useEditorTabAgent";
+import useTabManager from "./hooks/useEditorTabAgent";
 import useFSAUnsupported from "./hooks/useFSAUnsupported";
 import { useRegisterOpenSCADLanguage } from "./openscad-lang";
 import { identifyParts, OpenSCADPart } from "./openscad-parsing";
@@ -43,8 +43,11 @@ import {
   updateWorkspaceState,
   updateWorkspaceScrollPosition,
   updateWorkspaceCursorPosition,
+  updateWorkspaceSelections,
+  updateWorkspaceOpenTabs,
   warnOnce,
 } from "./utils/fsaUtils";
+import type { TabLoadData } from "./hooks/useEditorTabAgent";
 import { saveVmDebugSnapshot } from "./utils/debugSnapshot";
 
 const resizeBarSVGHelper = new ResizeSvgHelper({
@@ -189,7 +192,6 @@ export default function App() {
 
   const consoleDivRef = useRef<HTMLDivElement>(null);
   const [messages, setMessages] = useState<string[]>([]);
-  const [code, setCode] = useState("");
   const [isProcessing, setIsProcessing] = useState(false);
   const [renderedAtLeastOnce, setRenderedAtLeastOnce] = useState(false);
   const [partsPanelOpen, setPartsPanelOpen] = useState(true);
@@ -200,9 +202,8 @@ export default function App() {
 
   const scrollSaveTimeoutRef = useRef<number | null>(null);
   const cursorSaveTimeoutRef = useRef<number | null>(null);
-  const editorTabAgent = useEditorTabAgent({
-    code,
-    setCode,
+  const selectionSaveTimeoutRef = useRef<number | null>(null);
+  const tabManager = useTabManager({
     onScrollChange: (filePath, scrollTop) => {
       if (!projectHandle || !workspaceLoaded) return;
       if (scrollSaveTimeoutRef.current) {
@@ -226,8 +227,16 @@ export default function App() {
         );
       }, 200);
     },
+    onSelectionChange: (filePath, selections) => {
+      if (!projectHandle || !workspaceLoaded) return;
+      if (selectionSaveTimeoutRef.current) {
+        window.clearTimeout(selectionSaveTimeoutRef.current);
+      }
+      selectionSaveTimeoutRef.current = window.setTimeout(() => {
+        updateWorkspaceSelections(projectHandle.name, filePath, selections);
+      }, 200);
+    },
   });
-  const openFileHandleRef = useRef(editorTabAgent.openFileHandle);
   const layoutSaveTimeoutRef = useRef<number | null>(null);
   const editorContainerRef = useRef<HTMLDivElement>(null);
   const viewerContainerRef = useRef<HTMLDivElement>(null);
@@ -279,10 +288,6 @@ export default function App() {
   }, []);
 
   useEffect(() => {
-    openFileHandleRef.current = editorTabAgent.openFileHandle;
-  }, [editorTabAgent.openFileHandle]);
-
-  useEffect(() => {
     getStoredDirectoryHandle().then(async (h) => {
       if (h) {
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -301,10 +306,11 @@ export default function App() {
     }
     let cancelled = false;
     async function loadWorkspace() {
-      if(!projectHandle) return;
+      if (!projectHandle) return;
       const state = await loadWorkspaceState(projectHandle.name);
       if (cancelled) return;
 
+      // Restore layout
       if (state.layout) {
         const layout =
           typeof state.layout === "object" ? state.layout : null;
@@ -330,48 +336,75 @@ export default function App() {
         }
       }
 
-      const openFilePath =
-        typeof state.openFilePath === "string" ? state.openFilePath : null;
-      if (state.openFilePath && !openFilePath) {
-        warnOnce(
-          `workspace-openFile-${projectHandle.name}`,
-          `Workspace state: invalid open file for "${projectHandle.name}". Clearing open file.`
-        );
-        updateWorkspaceState(projectHandle.name, { openFilePath: null });
+      // Restore tabs (new system) or migrate from legacy openFilePath
+      const savedTabs = state.openTabs;
+      const savedActiveIndex = state.activeTabIndex ?? 0;
+
+      // Determine which tab entries to restore
+      let tabEntries: Array<{ path: string; isPreview: boolean }> = [];
+      if (Array.isArray(savedTabs) && savedTabs.length > 0) {
+        tabEntries = savedTabs;
+      } else if (typeof state.openFilePath === "string" && state.openFilePath) {
+        // Migrate legacy single-file state
+        tabEntries = [{ path: state.openFilePath, isPreview: false }];
       }
-      if (openFilePath) {
-        const handle = await getFileHandleByPath(
-          projectHandle,
-          openFilePath
-        );
-        if (cancelled) return;
-        if (handle) {
+
+      if (tabEntries.length > 0) {
+        const resolvedTabs: TabLoadData[] = [];
+        const failedPaths: string[] = [];
+
+        for (const entry of tabEntries) {
+          if (cancelled) return;
           try {
-            // eslint-disable-next-line @typescript-eslint/no-explicit-any
-            const perm = await (handle as any).queryPermission?.({
-              mode: "read",
-            });
-            if (perm && perm !== "granted") {
-              warnOnce(
-                `workspace-openFile-perm-${projectHandle.name}`,
-                `Workspace state: missing permission to open "${openFilePath}" in "${projectHandle.name}". Clearing open file.`
-              );
-              updateWorkspaceState(projectHandle.name, { openFilePath: null });
-            } else {
-              await openFileHandleRef.current(handle, openFilePath);
+            const handle = await getFileHandleByPath(projectHandle, entry.path);
+            if (!handle) {
+              failedPaths.push(entry.path);
+              continue;
             }
+            // eslint-disable-next-line @typescript-eslint/no-explicit-any
+            const perm = await (handle as any).queryPermission?.({ mode: "read" });
+            if (perm && perm !== "granted") {
+              failedPaths.push(entry.path);
+              continue;
+            }
+            const file = await handle.getFile();
+            const content = await file.text();
+            resolvedTabs.push({
+              handle,
+              path: entry.path,
+              isPreview: entry.isPreview,
+              content,
+              scrollTop: state.scrollPositions?.[entry.path],
+              cursorPosition: state.cursorPositions?.[entry.path],
+              selections: state.selections?.[entry.path],
+            });
           } catch {
-            warnOnce(
-              `workspace-openFile-perm-${projectHandle.name}`,
-              `Workspace state: unable to verify permission for "${openFilePath}" in "${projectHandle.name}". Clearing open file.`
-            );
-            updateWorkspaceState(projectHandle.name, { openFilePath: null });
+            failedPaths.push(entry.path);
           }
-        } else {
+        }
+
+        if (failedPaths.length > 0) {
           warnOnce(
-            `workspace-openFile-${projectHandle.name}`,
-            `Workspace state: missing file "${openFilePath}" in "${projectHandle.name}". Clearing open file.`
+            `workspace-tabs-${projectHandle.name}`,
+            `Workspace state: could not restore tabs for: ${failedPaths.join(", ")}. Removing from saved state.`
           );
+        }
+
+        if (cancelled) return;
+
+        if (resolvedTabs.length > 0) {
+          const clampedIndex = Math.min(savedActiveIndex, resolvedTabs.length - 1);
+          tabManager.loadTabs(resolvedTabs, Math.max(0, clampedIndex));
+        }
+
+        // Persist cleaned state
+        if (failedPaths.length > 0 || !Array.isArray(savedTabs)) {
+          updateWorkspaceOpenTabs(
+            projectHandle.name,
+            resolvedTabs.map((t) => ({ path: t.path, isPreview: t.isPreview })),
+            Math.max(0, Math.min(savedActiveIndex, resolvedTabs.length - 1))
+          );
+          // Clear legacy field
           updateWorkspaceState(projectHandle.name, { openFilePath: null });
         }
       }
@@ -407,35 +440,27 @@ export default function App() {
     };
   }, [fileBrowserFrac, editorFrac, viewerFrac, projectHandle, workspaceLoaded]);
 
+  // Persist open tabs and active index when they change
+  const tabsSaveTimeoutRef = useRef<number | null>(null);
   useEffect(() => {
     if (!projectHandle || !workspaceLoaded) return;
-    updateWorkspaceState(projectHandle.name, {
-      openFilePath: editorTabAgent.filePath ?? null,
-    });
-  }, [editorTabAgent.filePath, projectHandle, workspaceLoaded]);
-
-  useEffect(() => {
-    if (!projectHandle || !workspaceLoaded || !editorTabAgent.filePath) return;
-    let cancelled = false;
-    loadWorkspaceState(projectHandle.name).then((state) => {
-      if (cancelled) return;
-      const scrollTop = state.scrollPositions?.[editorTabAgent.filePath!];
-      if (typeof scrollTop === "number") {
-        editorTabAgent.setScrollTop(scrollTop);
-      }
-      const cursor = state.cursorPositions?.[editorTabAgent.filePath!];
-      if (
-        cursor &&
-        typeof cursor.lineNumber === "number" &&
-        typeof cursor.column === "number"
-      ) {
-        editorTabAgent.setCursorPosition(cursor.lineNumber, cursor.column);
-      }
-    });
+    if (tabsSaveTimeoutRef.current) {
+      window.clearTimeout(tabsSaveTimeoutRef.current);
+    }
+    tabsSaveTimeoutRef.current = window.setTimeout(() => {
+      updateWorkspaceOpenTabs(
+        projectHandle.name,
+        tabManager.tabs.map((t) => ({ path: t.filePath, isPreview: t.isPreview })),
+        tabManager.activeTabIndex
+      );
+    }, 200);
     return () => {
-      cancelled = true;
+      if (tabsSaveTimeoutRef.current) {
+        window.clearTimeout(tabsSaveTimeoutRef.current);
+        tabsSaveTimeoutRef.current = null;
+      }
     };
-  }, [editorTabAgent.filePath, projectHandle, workspaceLoaded]);
+  }, [tabManager.tabs, tabManager.activeTabIndex, projectHandle, workspaceLoaded]);
 
   const onPointerMove = useCallback(
     (e: ReactPointerEvent<HTMLDivElement>) => {
@@ -657,7 +682,14 @@ export default function App() {
     path: string,
     handle: FileSystemFileHandle
   ) => {
-    await editorTabAgent.openFileHandle(handle, path);
+    await tabManager.openFilePreview(handle, path);
+  };
+
+  const openFileFromBrowserPermanent = async (
+    path: string,
+    handle: FileSystemFileHandle
+  ) => {
+    await tabManager.openFilePermanent(handle, path);
   };
 
   const updateVisibility = useCallback(() => {
@@ -737,7 +769,7 @@ export default function App() {
 
   const renderModel = async (backend: "Manifold" | "CGAL") => {
     if (isProcessing) return log("Already processing");
-    const parts = identifyParts(code);
+    const parts = identifyParts(tabManager.code);
     if (!Object.keys(parts).length)
       return alert('No parts exported. Use "// @export".');
     Object.entries(parts).forEach(([n, p]) => {
@@ -757,10 +789,10 @@ export default function App() {
       // Collect .scad and .stl imports to upload into the worker VM
       let extraFiles: Record<string, string | Uint8Array> = {};
       let externalImports: string[] = [];
-      if (projectHandle && editorTabAgent.filePath) {
+      if (projectHandle && tabManager.filePath) {
         const collected = await collectImports(
           projectHandle,
-          editorTabAgent.filePath
+          tabManager.filePath
         );
         extraFiles = collected.files;
         externalImports = collected.externalImports;
@@ -771,7 +803,7 @@ export default function App() {
             n,
             p,
             backend,
-            editorTabAgent.filePath || "input.scad",
+            tabManager.filePath || "input.scad",
             extraFiles,
             externalImports
           );
@@ -886,7 +918,8 @@ export default function App() {
               <FileBrowser
                 rootHandle={projectHandle}
                 onOpenFile={openFileFromBrowser}
-                openFilePath={editorTabAgent.filePath}
+                onOpenFilePermanent={openFileFromBrowserPermanent}
+                openFilePath={tabManager.filePath}
               />
             </div>
           </div>
@@ -907,7 +940,7 @@ export default function App() {
             }}
           >
             <EditorTab
-              agent={editorTabAgent}
+              agent={tabManager}
               containerRef={editorContainerRef}
             />
           </div>

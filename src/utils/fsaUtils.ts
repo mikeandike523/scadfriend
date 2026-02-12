@@ -9,12 +9,28 @@ export type WorkspaceLayout = {
   viewer: number;
 };
 
+export type TabPersistEntry = {
+  path: string;
+  isPreview: boolean;
+};
+
+export type SelectionRange = {
+  startLineNumber: number;
+  startColumn: number;
+  endLineNumber: number;
+  endColumn: number;
+};
+
 export type WorkspaceState = {
   expandedDirs?: string[];
+  /** @deprecated Use openTabs + activeTabIndex instead */
   openFilePath?: string | null;
+  openTabs?: TabPersistEntry[];
+  activeTabIndex?: number;
   layout?: WorkspaceLayout | null;
   scrollPositions?: Record<string, number>;
   cursorPositions?: Record<string, { lineNumber: number; column: number }>;
+  selections?: Record<string, SelectionRange[]>;
 };
 
 const WARN_ONCE_KEYS = new Set<string>();
@@ -458,6 +474,36 @@ export async function updateWorkspaceCursorPosition(
       ...(prev.cursorPositions ?? {}),
       [filePath]: { lineNumber, column },
     },
+  };
+  await saveWorkspaceState(rootName, next);
+}
+
+export async function updateWorkspaceSelections(
+  rootName: string,
+  filePath: string,
+  ranges: SelectionRange[]
+): Promise<void> {
+  const prev = await loadWorkspaceState(rootName);
+  const next: WorkspaceState = {
+    ...prev,
+    selections: {
+      ...(prev.selections ?? {}),
+      [filePath]: ranges,
+    },
+  };
+  await saveWorkspaceState(rootName, next);
+}
+
+export async function updateWorkspaceOpenTabs(
+  rootName: string,
+  tabs: TabPersistEntry[],
+  activeTabIndex: number
+): Promise<void> {
+  const prev = await loadWorkspaceState(rootName);
+  const next: WorkspaceState = {
+    ...prev,
+    openTabs: tabs,
+    activeTabIndex,
   };
   await saveWorkspaceState(rootName, next);
 }
