@@ -2,7 +2,6 @@ import { useEffect, useRef, useState } from "react";
 import { Button, Div, Ul, Li } from "style-props-html";
 import { css } from "@emotion/react";
 import {
-  clearWorkspaceState,
   loadWorkspaceState,
   updateWorkspaceState,
   warnOnce,
@@ -246,38 +245,18 @@ export default function FileBrowser({
   }, [openFilePath]);
 
   return (
-    <Div padding="8px" height="100%" display="flex" flexDirection="column">
-      <Div flex="1 1 auto" overflow="auto">
-        <Ul listStyleType="none" padding="0" margin="0">
-          {tree.map((node) => (
-            <FileNodeView
-              key={node.path}
-              node={node}
-              onOpen={onOpenFile}
-              onOpenPermanent={onOpenFilePermanent}
-              expandedDirs={expandedDirs}
-              toggleDir={toggleDir}
-              selectedPath={openFilePath ?? null}
-            />
-          ))}
-        </Ul>
-      </Div>
-      <Div paddingTop="8px">
-        <Button
-          width="100%"
-          border="1px solid #d0d0d0"
-          borderRadius="6px"
-          padding="6px"
-          background="#fff7f7"
-          color="#9b1c1c"
-          onClick={async () => {
-            await clearWorkspaceState(rootHandle.name);
-            window.location.reload();
-          }}
-        >
-          Clear Workspace State
-        </Button>
-      </Div>
-    </Div>
+    <Ul listStyleType="none" padding="8px" margin="0">
+      {tree.map((node) => (
+        <FileNodeView
+          key={node.path}
+          node={node}
+          onOpen={onOpenFile}
+          onOpenPermanent={onOpenFilePermanent}
+          expandedDirs={expandedDirs}
+          toggleDir={toggleDir}
+          selectedPath={openFilePath ?? null}
+        />
+      ))}
+    </Ul>
   );
 }

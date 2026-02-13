@@ -47,6 +47,7 @@ import {
   updateWorkspaceOpenTabs,
   updateWorkspaceLastRender,
   updateWorkspaceCameraState,
+  clearWorkspaceState,
   warnOnce,
 } from "./utils/fsaUtils";
 import type { CameraState, PersistedModelEntry } from "./utils/fsaUtils";
@@ -1125,8 +1126,10 @@ export default function App() {
             style={{
               height: "100%",
               background: "#eee",
-              display: "flex",
-              flexDirection: "column",
+              display: "grid",
+              gridTemplateRows: "auto 1fr auto",
+              gridTemplateColumns: "1fr",
+              overflow: "hidden",
             }}
           >
             <Div
@@ -1141,7 +1144,7 @@ export default function App() {
               </P>
               <Button onClick={closeProject}>Close Project</Button>
             </Div>
-            <div style={{ flex: 1, overflow: "auto" }}>
+            <div style={{ overflow: "auto" }}>
               <FileBrowser
                 rootHandle={projectHandle}
                 onOpenFile={openFileFromBrowser}
@@ -1149,6 +1152,22 @@ export default function App() {
                 openFilePath={tabManager.filePath}
               />
             </div>
+            <Div padding="8px" borderTop="1px solid #ccc">
+              <Button
+                width="100%"
+                border="1px solid #d0d0d0"
+                borderRadius="6px"
+                padding="6px"
+                background="#fff7f7"
+                color="#9b1c1c"
+                onClick={async () => {
+                  await clearWorkspaceState(projectHandle.name);
+                  window.location.reload();
+                }}
+              >
+                Clear Workspace State
+              </Button>
+            </Div>
           </div>
           <div
             style={resizeBarStyle}
