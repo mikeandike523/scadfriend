@@ -4,7 +4,12 @@ import { forwardRef, RefObject, useEffect, useState } from "react";
 import { Button, Div, DivProps, H1, P, Span } from "style-props-html";
 import { TabManager } from "../hooks/useEditorTabAgent";
 import { useRegisterOpenSCADLanguage } from "../openscad-lang";
-import { FaSave, FaTimes } from "react-icons/fa";
+import { FaSave, FaTimes, FaBan } from "react-icons/fa";
+import {
+  getLanguageForFile,
+  isBinaryFile,
+  getBinaryFileCategory,
+} from "../utils/fileTypes";
 
 import "@fontsource/fira-code/300.css";
 import "@fontsource/fira-code/400.css";
@@ -40,6 +45,10 @@ export default forwardRef<HTMLDivElement, EditorTabProps>(function EditorTab(
   useEffect(() => {
     agent.layoutEditor();
   }, [currentContainerWidth]);
+
+  const filename = agent.filename;
+  const binary = filename ? isBinaryFile(filename) : false;
+  const language = filename ? getLanguageForFile(filename) : "openscad";
 
   return (
     <Div
@@ -146,8 +155,8 @@ export default forwardRef<HTMLDivElement, EditorTabProps>(function EditorTab(
           })}
         </Div>
 
-        {/* Active tab toolbar (save button) */}
-        {agent.fileIsLoaded && (
+        {/* Active tab toolbar (save button) — only shown when dirty */}
+        {agent.dirty && (
           <Div
             display="flex"
             flexDirection="row"
@@ -158,30 +167,60 @@ export default forwardRef<HTMLDivElement, EditorTabProps>(function EditorTab(
             borderBottom="1px solid #eee"
             minHeight="28px"
           >
-            {agent.dirty && (
-              <Button
-                borderRadius="50%"
-                border="2px solid blue"
-                width="auto"
-                height="auto"
-                display="flex"
-                aspectRatio={1.0}
-                padding="4px"
-                color="blue"
-                background="none"
-                alignItems="center"
-                justifyContent="center"
-                onClick={agent.saveCurrentFile}
-              >
-                <FaSave />
-              </Button>
-            )}
+            <Button
+              borderRadius="50%"
+              border="2px solid blue"
+              width="auto"
+              height="auto"
+              display="flex"
+              aspectRatio={1.0}
+              padding="4px"
+              color="blue"
+              background="none"
+              alignItems="center"
+              justifyContent="center"
+              onClick={agent.saveCurrentFile}
+            >
+              <FaSave />
+            </Button>
           </Div>
         )}
       </Div>
 
       <Div width="100%" height="100%" position="relative" overflow="hidden">
-        {currentContainerWidth && (
+        {/* Binary file placeholder */}
+        {agent.fileIsLoaded && binary && (
+          <Div
+            display="flex"
+            flexDirection="column"
+            alignItems="center"
+            justifyContent="center"
+            height="100%"
+            width="100%"
+            background="#1e1e1e"
+            color="#ccc"
+            gap="12px"
+          >
+            <FaBan style={{ fontSize: "48px", color: "#666" }} />
+            <Div fontSize="20px" fontWeight="600" color="#999">
+              Binary File
+            </Div>
+            <Div fontSize="16px" color="#aaa">
+              {filename}
+            </Div>
+            <Div
+              fontSize="13px"
+              color="#777"
+              padding="4px 12px"
+              background="#2a2a2a"
+              borderRadius="4px"
+            >
+              Expected type: {filename ? getBinaryFileCategory(filename) : "Unknown"}
+            </Div>
+          </Div>
+        )}
+        {/* Monaco editor — only for text files */}
+        {currentContainerWidth && !binary && (
           <Editor
             onMount={(editor) => {
               agent.storeEditor(editor);
@@ -203,7 +242,7 @@ export default forwardRef<HTMLDivElement, EditorTabProps>(function EditorTab(
               renderWhitespace: "all",
               minimap: { enabled: false },
             }}
-            defaultLanguage="openscad"
+            language={language ?? "plaintext"}
             value={agent.code}
             theme="openscad-theme"
           />

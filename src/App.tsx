@@ -45,10 +45,14 @@ import {
   updateWorkspaceCursorPosition,
   updateWorkspaceSelections,
   updateWorkspaceOpenTabs,
+  updateWorkspaceLastRender,
   warnOnce,
 } from "./utils/fsaUtils";
+import type { CameraState, PersistedModelEntry } from "./utils/fsaUtils";
 import type { TabLoadData } from "./hooks/useEditorTabAgent";
 import { saveVmDebugSnapshot } from "./utils/debugSnapshot";
+import { isScadFile } from "./utils/fileTypes";
+import { MAX_MODEL_PERSIST_BYTES } from "./utils/persistLimits";
 
 const resizeBarSVGHelper = new ResizeSvgHelper({
   arrowHeadWidth: 12,
@@ -199,6 +203,16 @@ export default function App() {
   const [partSettings, setPartSettings] = useState<
     Record<string, PartSettings>
   >({});
+  const [lastRenderedFile, setLastRenderedFile] = useState<string | null>(null);
+  const [lastRenderedBackend, setLastRenderedBackend] = useState<
+    "Manifold" | "CGAL" | null
+  >(null);
+  const pendingRestoreRef = useRef<{
+    file: string;
+    backend: "Manifold" | "CGAL";
+    camera: CameraState;
+    models: PersistedModelEntry[];
+  } | null>(null);
 
   const scrollSaveTimeoutRef = useRef<number | null>(null);
   const cursorSaveTimeoutRef = useRef<number | null>(null);
@@ -407,6 +421,11 @@ export default function App() {
           // Clear legacy field
           updateWorkspaceState(projectHandle.name, { openFilePath: null });
         }
+      }
+
+      // Queue persisted render restore (applied once Three.js scene is ready)
+      if (state.lastRender && state.lastRender.models.length > 0) {
+        pendingRestoreRef.current = state.lastRender;
       }
 
       if (!cancelled) setWorkspaceLoaded(true);
@@ -634,6 +653,120 @@ export default function App() {
     }
   };
 
+  const onThreeReady = useCallback(() => {
+    const restore = pendingRestoreRef.current;
+    if (!restore) return;
+    pendingRestoreRef.current = null;
+
+    // Rebuild completedModelRef from persisted data
+    const rebuilt: Record<string, OpenSCADPartWithSTL> = {};
+    for (const m of restore.models) {
+      rebuilt[m.name] = {
+        ownSourceCode: "",
+        exported: m.exported,
+        color: m.color,
+        stl: new Uint8Array(m.stl),
+      };
+    }
+    completedModelRef.current = rebuilt;
+    setLastRenderedFile(restore.file);
+    setLastRenderedBackend(restore.backend);
+    setRenderedAtLeastOnce(true);
+
+    // Rebuild part settings
+    const ps: Record<string, PartSettings> = {};
+    for (const m of restore.models) {
+      ps[m.name] = { visible: true, exported: m.exported };
+    }
+    setPartSettings(ps);
+
+    // Build the scene (without goToDefaultView — we'll restore camera manually)
+    const three = threeObjectsRef.current;
+    if (!three) return;
+    const { loader, partsGroup, scene } = three;
+    partsGroup.clear();
+    Object.entries(rebuilt).forEach(([name, part]) => {
+      if (!part.stl) return;
+      try {
+        const geom = loader.parse(
+          copySharedBufferToArrayBuffer(part.stl.buffer)
+        );
+        geom.rotateX(-Math.PI / 2);
+        const mat = new THREE.MeshPhongMaterial({
+          color: getColorOrDefault(part.color),
+        });
+        const mesh = new THREE.Mesh(geom, mat);
+        mesh.name = name;
+        mesh.castShadow = mesh.receiveShadow = true;
+        partsGroup.add(mesh);
+      } catch {
+        // ignored
+      }
+    });
+
+    // Restore axes
+    removeAxes(scene);
+    const bbox = new THREE.Box3();
+    traverseSyncChildrenFirst(scene, (node) => {
+      if (node instanceof THREE.Mesh && !node.userData.keep)
+        bbox.expandByObject(node);
+    });
+    if (!bbox.isEmpty()) {
+      const size = new THREE.Vector3();
+      bbox.getSize(size);
+      const maxDim = Math.max(size.x, size.y, size.z);
+      const axisLength = (maxDim / 2) * 1.5;
+      const addAxis = (
+        dir: THREE.Vector3,
+        mainColor: THREE.Color,
+        tickColor: THREE.Color,
+        label: string,
+        offset: THREE.Vector3
+      ) => {
+        createLabeledAxis({
+          scene,
+          direction: dir,
+          length: axisLength,
+          tickSpacing: 5,
+          mainLineColor: mainColor,
+          tickColor,
+          labelText: label,
+          labelFontSize: 4,
+          labelOffset: offset,
+          name: "__AXIS_" + label,
+          visible: true,
+        });
+      };
+      [
+        { dir: new THREE.Vector3(1, 0, 0), color: 0xff0000, label: "+X" },
+        { dir: new THREE.Vector3(0, 0, -1), color: 0x00ff00, label: "+Y" },
+        { dir: new THREE.Vector3(0, 1, 0), color: 0x0000ff, label: "+Z" },
+        { dir: new THREE.Vector3(-1, 0, 0), color: 0xffff00, label: "-X" },
+        { dir: new THREE.Vector3(0, 0, 1), color: 0x00ffff, label: "-Y" },
+        { dir: new THREE.Vector3(0, -1, 0), color: 0xff00ff, label: "-Z" },
+      ].forEach(({ dir, color, label }) =>
+        addAxis(
+          dir,
+          new THREE.Color(color),
+          new THREE.Color(0x000000),
+          label,
+          new THREE.Vector3(0, 5, 0)
+        )
+      );
+    }
+
+    // Restore camera + orbit controls
+    const cam = restore.camera;
+    three.camera.position.set(...cam.position);
+    three.camera.fov = cam.fov;
+    three.camera.zoom = cam.zoom;
+    three.camera.updateProjectionMatrix();
+    if (orbitControlsRef.current) {
+      orbitControlsRef.current.target.set(...cam.orbitTarget);
+      orbitControlsRef.current.update();
+    }
+  }, []);
+
   // const log = (msg: string) =>
   //   setMessages((m) => [...m, msg].slice(-MAX_MESSAGES));
   const log = (msg: string) => {
@@ -808,9 +941,51 @@ export default function App() {
             externalImports
           );
       setRenderedAtLeastOnce(true);
+      setLastRenderedFile(tabManager.filename);
+      setLastRenderedBackend(backend);
       log("Done");
       setPartSettings({ ...partSettings });
       updateThreeScene();
+
+      // Persist model + camera state to IndexedDB (all-or-nothing)
+      if (projectHandle) {
+        let totalBytes = 0;
+        for (const entry of Object.values(completedModelRef.current)) {
+          if (entry.stl) totalBytes += entry.stl.byteLength;
+        }
+        if (totalBytes < MAX_MODEL_PERSIST_BYTES) {
+          const three = threeObjectsRef.current;
+          const controls = orbitControlsRef.current;
+          const camera: CameraState | null =
+            three && controls
+              ? {
+                  position: three.camera.position.toArray() as [number, number, number],
+                  fov: three.camera.fov,
+                  zoom: three.camera.zoom,
+                  orbitTarget: controls.target.toArray() as [number, number, number],
+                }
+              : null;
+          const models: PersistedModelEntry[] = Object.entries(
+            completedModelRef.current
+          )
+            .filter(([, v]) => v.stl)
+            .map(([name, v]) => ({
+              name,
+              stl: copySharedBufferToArrayBuffer(v.stl!.buffer),
+              color: v.color,
+              exported: v.exported,
+            }));
+          updateWorkspaceLastRender(projectHandle.name, {
+            file: tabManager.filename ?? "unknown",
+            backend,
+            camera: camera ?? { position: [0, 0, 100], fov: 75, zoom: 1, orbitTarget: [0, 0, 0] },
+            models,
+          });
+        } else {
+          // Model too large — clear any stale persisted render
+          updateWorkspaceLastRender(projectHandle.name, null);
+        }
+      }
     } catch (err) {
       alert("Rendering failed");
       log(`Fail: ${formatError(err)}`);
@@ -934,9 +1109,7 @@ export default function App() {
             ref={editorContainerRef}
             style={{
               height: "100%",
-              overflow: "auto",
-              background: "#f5f5f5",
-              padding: "8px",
+              overflow: "hidden",
             }}
           >
             <EditorTab
@@ -962,23 +1135,37 @@ export default function App() {
               overflow: "hidden",
             }}
           >
-            <Div width="100%" display="flex" gap="8px" padding="8px">
-              <Button
-                disabled={isProcessing}
-                flex={1}
-                fontSize="150%"
-                onClick={() => renderModel("Manifold")}
-              >
-                Render (Manifold)
-              </Button>
-              <Button
-                disabled={isProcessing}
-                flex={1}
-                fontSize="150%"
-                onClick={() => renderModel("CGAL")}
-              >
-                Render (CGAL)
-              </Button>
+            <Div width="100%" display="flex" flexDirection="column" gap="0">
+              <Div display="flex" gap="8px" padding="8px">
+                <Button
+                  disabled={isProcessing || !(tabManager.filename && isScadFile(tabManager.filename))}
+                  flex={1}
+                  fontSize="150%"
+                  onClick={() => renderModel("Manifold")}
+                >
+                  Render (Manifold)
+                </Button>
+                <Button
+                  disabled={isProcessing || !(tabManager.filename && isScadFile(tabManager.filename))}
+                  flex={1}
+                  fontSize="150%"
+                  onClick={() => renderModel("CGAL")}
+                >
+                  Render (CGAL)
+                </Button>
+              </Div>
+              {lastRenderedFile && (
+                <Div
+                  padding="2px 8px 4px"
+                  fontSize="12px"
+                  color="#666"
+                  background="#f0f0f0"
+                  borderBottom="1px solid #ddd"
+                  textAlign="center"
+                >
+                  Last render: {lastRenderedFile} ({lastRenderedBackend})
+                </Div>
+              )}
             </Div>
             <Div
               width="100%"
@@ -1088,6 +1275,7 @@ export default function App() {
                 <ThreeViewer
                   handleRef={threeObjectsRef}
                   controlsRef={orbitControlsRef}
+                  onReady={onThreeReady}
                 />
                 <Div
                   position="absolute"

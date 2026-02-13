@@ -1,0 +1,50 @@
+Editor Spec 1.0 — SCADFriend Requirements
+===========================================
+
+### 1. Fix: Remove extra empty div below the tab bar
+
+The last commit introduced an unnecessary white div beneath the tab toolbar
+that wastes vertical space. Clean up the sizing approach — consider CSS Grid
+with grid-template-rows (auto for tab bar, 1fr for editor) instead of mixed
+JS-computed sizes and vh units. Audit all inline styles, style-props-html,
+and @emotion/react styles to ensure nothing breaks.
+
+### 2. Feature: Extension-based syntax highlighting + binary file detection
+
+- Create a dedicated file mapping extensions to Monaco language IDs (install
+  additional Monaco language packages if needed).
+- Any file whose extension is NOT in that map is treated as a binary file.
+- When a binary file tab is active, show a placeholder div instead of Monaco
+  displaying: the file name, "Binary file", and an inferred file type label
+  (e.g., "Image", "Video", "Arbitrary binary" — hardcoded lookup).
+- Future: special viewers for images/video/etc., but not now.
+
+### 3. Feature: Disable render buttons for non-.scad files
+
+When the active tab is NOT a .scad file (case-insensitive), disable both
+"Render (Manifold)" and "Render (CGAL)" buttons since rendering only applies
+to OpenSCAD files.
+
+### 4. Feature: Show last-rendered file info in the viewer pane
+
+In the right-side viewer pane, display a small indicator showing:
+- Which file was last rendered
+- Which backend was used (Manifold or CGAL)
+
+Add new fields to WorkspaceState and corresponding React state, following
+existing persistence conventions (debounced IndexedDB writes).
+
+### 5. Feature: Persist last-rendered model and camera state to IndexedDB
+
+- In-memory (always): The app keeps the last-rendered file name, backend,
+  model data, and camera/orbit state in React state as normal — no size
+  restrictions.
+- IndexedDB persistence (all-or-nothing): Persist the last-rendered model
+  data, file name, backend, and camera/OrbitControls state to IndexedDB so
+  the full 3D view can be restored on reload. However, if the model data
+  exceeds a configurable size limit (default: 100 MB, defined as a named
+  variable in its own file), skip persisting ALL of it — model, filename,
+  backend, and camera state alike — to avoid a desync between what is stored.
+- Camera & OrbitControls state: Research whether Three.js camera
+  position/rotation/zoom and OrbitControls target are serializable and
+  restorable. If so, include them in the persisted bundle.

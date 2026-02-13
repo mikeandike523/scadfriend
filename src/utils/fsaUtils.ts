@@ -21,6 +21,27 @@ export type SelectionRange = {
   endColumn: number;
 };
 
+export type CameraState = {
+  position: [number, number, number];
+  fov: number;
+  zoom: number;
+  orbitTarget: [number, number, number];
+};
+
+export type PersistedModelEntry = {
+  name: string;
+  stl: ArrayBuffer;
+  color?: string;
+  exported: boolean;
+};
+
+export type PersistedLastRender = {
+  file: string;
+  backend: "Manifold" | "CGAL";
+  camera: CameraState;
+  models: PersistedModelEntry[];
+};
+
 export type WorkspaceState = {
   expandedDirs?: string[];
   /** @deprecated Use openTabs + activeTabIndex instead */
@@ -31,6 +52,7 @@ export type WorkspaceState = {
   scrollPositions?: Record<string, number>;
   cursorPositions?: Record<string, { lineNumber: number; column: number }>;
   selections?: Record<string, SelectionRange[]>;
+  lastRender?: PersistedLastRender | null;
 };
 
 const WARN_ONCE_KEYS = new Set<string>();
@@ -504,6 +526,18 @@ export async function updateWorkspaceOpenTabs(
     ...prev,
     openTabs: tabs,
     activeTabIndex,
+  };
+  await saveWorkspaceState(rootName, next);
+}
+
+export async function updateWorkspaceLastRender(
+  rootName: string,
+  data: PersistedLastRender | null
+): Promise<void> {
+  const prev = await loadWorkspaceState(rootName);
+  const next: WorkspaceState = {
+    ...prev,
+    lastRender: data,
   };
   await saveWorkspaceState(rootName, next);
 }
