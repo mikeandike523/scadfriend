@@ -60,7 +60,7 @@ function FileNodeView({
           textAlign="left"
           background={isSelected ? "#e6f4ff" : "none"}
           color={isSelected ? "#0b4aa2" : "inherit"}
-          fontWeight={isSelected ? "600" : "normal"}
+          fontWeight={isSelected ? 600 : "normal"}
           border="none"
           borderRadius="4px"
           padding="4px"

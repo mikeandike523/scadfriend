@@ -109,7 +109,7 @@ export default forwardRef<HTMLDivElement, EditorTabProps>(function EditorTab(
                   fontSize="13px"
                   fontStyle={tab.isPreview ? "italic" : "normal"}
                   color={isActive ? "#1e88e5" : "#555"}
-                  fontWeight={isActive ? "600" : "normal"}
+                  fontWeight={isActive ? 600 : "normal"}
                   whiteSpace="nowrap"
                 >
                   {tab.filename}
@@ -197,7 +197,7 @@ export default forwardRef<HTMLDivElement, EditorTabProps>(function EditorTab(
             gap="12px"
           >
             <FaBan style={{ fontSize: "48px", color: "#666" }} />
-            <Div fontSize="20px" fontWeight="600" color="#999">
+            <Div fontSize="20px" fontWeight={600} color="#999">
               Binary File
             </Div>
             <Div fontSize="16px" color="#aaa">
