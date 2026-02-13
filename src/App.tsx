@@ -214,7 +214,6 @@ export default function App() {
     camera: CameraState;
     models: PersistedModelEntry[];
   } | null>(null);
-  const [threeReady, setThreeReady] = useState(false);
 
   const scrollSaveTimeoutRef = useRef<number | null>(null);
   const cursorSaveTimeoutRef = useRef<number | null>(null);
@@ -487,52 +486,52 @@ export default function App() {
     };
   }, [tabManager.tabs, tabManager.activeTabIndex, projectHandle, workspaceLoaded]);
 
-  // Persist camera/orbit state on OrbitControls change (debounced, leading + trailing)
+  // Persist camera/orbit state via pointer events on viewer container
+  // (debounced, leading + trailing, 500ms)
   const cameraSaveTimeoutRef = useRef<number | null>(null);
   const cameraSaveLeadingFiredRef = useRef(false);
-  useEffect(() => {
-    if (!projectHandle || !workspaceLoaded) return;
-    const controls = orbitControlsRef.current;
-    if (!controls) return;
 
-    const persistCamera = () => {
-      const three = threeObjectsRef.current;
-      const ctrl = orbitControlsRef.current;
-      if (!three || !ctrl || !projectHandle) return;
-      const cam: CameraState = {
-        position: three.camera.position.toArray() as [number, number, number],
-        fov: three.camera.fov,
-        zoom: three.camera.zoom,
-        orbitTarget: ctrl.target.toArray() as [number, number, number],
-      };
-      updateWorkspaceCameraState(projectHandle.name, cam);
+  const persistCamera = useCallback(() => {
+    const three = threeObjectsRef.current;
+    const ctrl = orbitControlsRef.current;
+    if (!three || !ctrl || !projectHandle) return;
+    const cam: CameraState = {
+      position: three.camera.position.toArray() as [number, number, number],
+      fov: three.camera.fov,
+      zoom: three.camera.zoom,
+      orbitTarget: ctrl.target.toArray() as [number, number, number],
     };
+    updateWorkspaceCameraState(projectHandle.name, cam);
+  }, [projectHandle]);
 
-    const onControlsChange = () => {
-      // Leading edge: fire immediately on first change in a burst
-      if (!cameraSaveLeadingFiredRef.current) {
-        cameraSaveLeadingFiredRef.current = true;
-        persistCamera();
-      }
-      // Trailing edge: reset timer on every change, fire when idle
-      if (cameraSaveTimeoutRef.current) {
-        window.clearTimeout(cameraSaveTimeoutRef.current);
-      }
-      cameraSaveTimeoutRef.current = window.setTimeout(() => {
-        cameraSaveLeadingFiredRef.current = false;
-        persistCamera();
-      }, 500);
-    };
+  const onViewerPointerUp = useCallback(() => {
+    if (!projectHandle || !workspaceLoaded || !renderedAtLeastOnce) return;
+    // Leading edge: fire immediately on first interaction in a burst
+    if (!cameraSaveLeadingFiredRef.current) {
+      cameraSaveLeadingFiredRef.current = true;
+      persistCamera();
+    }
+    // Trailing edge: reset timer, fire when idle
+    if (cameraSaveTimeoutRef.current) {
+      window.clearTimeout(cameraSaveTimeoutRef.current);
+    }
+    cameraSaveTimeoutRef.current = window.setTimeout(() => {
+      cameraSaveLeadingFiredRef.current = false;
+      persistCamera();
+    }, 500);
+  }, [projectHandle, workspaceLoaded, renderedAtLeastOnce, persistCamera]);
 
-    controls.addEventListener("change", onControlsChange);
-    return () => {
-      controls.removeEventListener("change", onControlsChange);
-      if (cameraSaveTimeoutRef.current) {
-        window.clearTimeout(cameraSaveTimeoutRef.current);
-        cameraSaveTimeoutRef.current = null;
-      }
-    };
-  }, [projectHandle, workspaceLoaded, threeReady]);
+  const onViewerWheel = useCallback(() => {
+    // Zoom via scroll wheel also changes camera
+    if (!projectHandle || !workspaceLoaded || !renderedAtLeastOnce) return;
+    if (cameraSaveTimeoutRef.current) {
+      window.clearTimeout(cameraSaveTimeoutRef.current);
+    }
+    cameraSaveTimeoutRef.current = window.setTimeout(() => {
+      cameraSaveLeadingFiredRef.current = false;
+      persistCamera();
+    }, 500);
+  }, [projectHandle, workspaceLoaded, renderedAtLeastOnce, persistCamera]);
 
   const onPointerMove = useCallback(
     (e: ReactPointerEvent<HTMLDivElement>) => {
@@ -707,7 +706,6 @@ export default function App() {
   };
 
   const onThreeReady = useCallback(() => {
-    setThreeReady(true);
     const restore = pendingRestoreRef.current;
     if (!restore) return;
     pendingRestoreRef.current = null;
@@ -1181,6 +1179,8 @@ export default function App() {
           <div
             className="viewer-container"
             ref={viewerContainerRef}
+            onPointerUp={onViewerPointerUp}
+            onWheel={onViewerWheel}
             style={{
               height: "100%",
               display: "grid",

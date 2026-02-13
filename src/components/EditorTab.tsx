@@ -62,11 +62,13 @@ export default forwardRef<HTMLDivElement, EditorTabProps>(function EditorTab(
       columnGap="0"
       {...rest}
     >
-      {/* Tab bar */}
+      {/* Tab bar: tabs (scrollable) + save button (fixed right) */}
       <Div
-        display="flex"
-        flexDirection="column"
-        gap="0"
+        display="grid"
+        gridTemplateColumns="1fr auto"
+        background="#e8e8e8"
+        borderBottom="1px solid #ccc"
+        minHeight="32px"
       >
         {/* Tabs row */}
         <Div
@@ -74,9 +76,6 @@ export default forwardRef<HTMLDivElement, EditorTabProps>(function EditorTab(
           flexDirection="row"
           alignItems="stretch"
           overflowX="auto"
-          background="#e8e8e8"
-          borderBottom="1px solid #ccc"
-          minHeight="32px"
           css={css`
             scrollbar-width: thin;
             &::-webkit-scrollbar {
@@ -155,36 +154,32 @@ export default forwardRef<HTMLDivElement, EditorTabProps>(function EditorTab(
           })}
         </Div>
 
-        {/* Active tab toolbar (save button) — only shown when dirty */}
-        {agent.dirty && (
-          <Div
+        {/* Save button — always visible, disabled when not dirty */}
+        <Div
+          display="flex"
+          alignItems="center"
+          padding="0 6px"
+          borderLeft="1px solid #ccc"
+        >
+          <Button
+            disabled={!agent.dirty}
+            borderRadius="50%"
+            border={agent.dirty ? "2px solid blue" : "2px solid #ccc"}
+            width="auto"
+            height="auto"
             display="flex"
-            flexDirection="row"
+            aspectRatio={1.0}
+            padding="4px"
+            color={agent.dirty ? "blue" : "#ccc"}
+            background="none"
             alignItems="center"
-            justifyContent="flex-end"
-            padding="2px 8px"
-            background="#fff"
-            borderBottom="1px solid #eee"
-            minHeight="28px"
+            justifyContent="center"
+            cursor={agent.dirty ? "pointer" : "default"}
+            onClick={agent.dirty ? agent.saveCurrentFile : undefined}
           >
-            <Button
-              borderRadius="50%"
-              border="2px solid blue"
-              width="auto"
-              height="auto"
-              display="flex"
-              aspectRatio={1.0}
-              padding="4px"
-              color="blue"
-              background="none"
-              alignItems="center"
-              justifyContent="center"
-              onClick={agent.saveCurrentFile}
-            >
-              <FaSave />
-            </Button>
-          </Div>
-        )}
+            <FaSave />
+          </Button>
+        </Div>
       </Div>
 
       <Div width="100%" height="100%" position="relative" overflow="hidden">
