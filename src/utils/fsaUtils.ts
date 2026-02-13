@@ -542,6 +542,19 @@ export async function updateWorkspaceLastRender(
   await saveWorkspaceState(rootName, next);
 }
 
+export async function updateWorkspaceCameraState(
+  rootName: string,
+  camera: CameraState
+): Promise<void> {
+  const prev = await loadWorkspaceState(rootName);
+  if (!prev.lastRender) return; // no model persisted — nothing to attach camera to
+  const next: WorkspaceState = {
+    ...prev,
+    lastRender: { ...prev.lastRender, camera },
+  };
+  await saveWorkspaceState(rootName, next);
+}
+
 /**
  * Resolve a file handle from a root directory and a path like "dir/file.scad".
  */

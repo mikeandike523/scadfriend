@@ -8,6 +8,7 @@ import {
 import { OnMount } from "@monaco-editor/react";
 import { saveFile } from "../utils/fsaUtils";
 import type { SelectionRange } from "../utils/fsaUtils";
+import { isBinaryFile } from "../utils/fileTypes";
 
 export type MonacoEditorInterface = Parameters<OnMount>[0];
 
@@ -244,11 +245,13 @@ export default function useTabManager({
       // Snapshot outgoing tab
       const snapshotted = snapshotActiveTab();
 
-      // Switch and load
+      // Switch and load (skip Monaco update for binary files — sample-and-hold)
       const tab = snapshotted[index];
       commitTabs(snapshotted, index);
-      setEditorValue(tab.code);
-      restoreTabViewport(tab);
+      if (!isBinaryFile(tab.filename)) {
+        setEditorValue(tab.code);
+        restoreTabViewport(tab);
+      }
     },
     [snapshotActiveTab, commitTabs, setEditorValue, restoreTabViewport]
   );
@@ -265,9 +268,13 @@ export default function useTabManager({
         return;
       }
 
-      // Read file content
-      const file = await handle.getFile();
-      const content = await file.text();
+      // Binary files: don't read content, don't touch Monaco (sample-and-hold)
+      const binary = isBinaryFile(handle.name);
+      let content = "";
+      if (!binary) {
+        const file = await handle.getFile();
+        content = await file.text();
+      }
       const newTab = createTab(handle, path, content, true);
 
       const existingPreviewIdx = currentTabs.findIndex((t) => t.isPreview);
@@ -280,8 +287,10 @@ export default function useTabManager({
         const next = [...snapshotted];
         next[existingPreviewIdx] = newTab;
         commitTabs(next, existingPreviewIdx);
-        setEditorValue(content);
-        restoreTabViewport(newTab);
+        if (!binary) {
+          setEditorValue(content);
+          restoreTabViewport(newTab);
+        }
         return;
       }
 
@@ -302,8 +311,10 @@ export default function useTabManager({
         next.splice(insertAt, 0, newTab);
 
         commitTabs(next, insertAt);
-        setEditorValue(content);
-        restoreTabViewport(newTab);
+        if (!binary) {
+          setEditorValue(content);
+          restoreTabViewport(newTab);
+        }
         return;
       }
 
@@ -314,8 +325,10 @@ export default function useTabManager({
       next.splice(insertAt, 0, newTab);
 
       commitTabs(next, insertAt);
-      setEditorValue(content);
-      restoreTabViewport(newTab);
+      if (!binary) {
+        setEditorValue(content);
+        restoreTabViewport(newTab);
+      }
     },
     [
       switchTab,
@@ -331,6 +344,7 @@ export default function useTabManager({
     async (handle: FileSystemFileHandle, path: string) => {
       const currentTabs = tabsRef.current;
       const currentActive = activeTabIndexRef.current;
+      const binary = isBinaryFile(handle.name);
 
       // Case 1: File already open -> switch to it (promote if preview)
       const existingIdx = currentTabs.findIndex((t) => t.filePath === path);
@@ -340,7 +354,7 @@ export default function useTabManager({
           const next = [...snapshotted];
           next[existingIdx] = { ...next[existingIdx], isPreview: false };
           commitTabs(next, existingIdx);
-          if (existingIdx !== currentActive) {
+          if (existingIdx !== currentActive && !binary) {
             setEditorValue(next[existingIdx].code);
             restoreTabViewport(next[existingIdx]);
           }
@@ -351,8 +365,11 @@ export default function useTabManager({
       }
 
       // Case 2: Not open -> create new permanent tab after active
-      const file = await handle.getFile();
-      const content = await file.text();
+      let content = "";
+      if (!binary) {
+        const file = await handle.getFile();
+        content = await file.text();
+      }
       const newTab = createTab(handle, path, content, false);
 
       const snapshotted = snapshotActiveTab();
@@ -361,8 +378,10 @@ export default function useTabManager({
       next.splice(insertAt, 0, newTab);
 
       commitTabs(next, insertAt);
-      setEditorValue(content);
-      restoreTabViewport(newTab);
+      if (!binary) {
+        setEditorValue(content);
+        restoreTabViewport(newTab);
+      }
     },
     [
       switchTab,
@@ -452,7 +471,7 @@ export default function useTabManager({
 
       commitTabs(newTabs, newActive);
 
-      if (newActive >= 0) {
+      if (newActive >= 0 && !isBinaryFile(newTabs[newActive].filename)) {
         setEditorValue(newTabs[newActive].code);
         restoreTabViewport(newTabs[newActive]);
       } else {
@@ -650,8 +669,10 @@ export default function useTabManager({
 
       if (validIndex >= 0) {
         const tab = newTabs[validIndex];
-        setEditorValue(tab.code);
-        restoreTabViewport(tab);
+        if (!isBinaryFile(tab.filename)) {
+          setEditorValue(tab.code);
+          restoreTabViewport(tab);
+        }
       }
     },
     [commitTabs, setEditorValue, restoreTabViewport]

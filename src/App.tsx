@@ -46,12 +46,13 @@ import {
   updateWorkspaceSelections,
   updateWorkspaceOpenTabs,
   updateWorkspaceLastRender,
+  updateWorkspaceCameraState,
   warnOnce,
 } from "./utils/fsaUtils";
 import type { CameraState, PersistedModelEntry } from "./utils/fsaUtils";
 import type { TabLoadData } from "./hooks/useEditorTabAgent";
 import { saveVmDebugSnapshot } from "./utils/debugSnapshot";
-import { isScadFile } from "./utils/fileTypes";
+import { isScadFile, isBinaryFile } from "./utils/fileTypes";
 import { MAX_MODEL_PERSIST_BYTES } from "./utils/persistLimits";
 
 const resizeBarSVGHelper = new ResizeSvgHelper({
@@ -213,6 +214,7 @@ export default function App() {
     camera: CameraState;
     models: PersistedModelEntry[];
   } | null>(null);
+  const [threeReady, setThreeReady] = useState(false);
 
   const scrollSaveTimeoutRef = useRef<number | null>(null);
   const cursorSaveTimeoutRef = useRef<number | null>(null);
@@ -381,8 +383,12 @@ export default function App() {
               failedPaths.push(entry.path);
               continue;
             }
-            const file = await handle.getFile();
-            const content = await file.text();
+            // Skip reading binary file content — tab manager won't push it to Monaco
+            let content = "";
+            if (!isBinaryFile(handle.name)) {
+              const file = await handle.getFile();
+              content = await file.text();
+            }
             resolvedTabs.push({
               handle,
               path: entry.path,
@@ -480,6 +486,53 @@ export default function App() {
       }
     };
   }, [tabManager.tabs, tabManager.activeTabIndex, projectHandle, workspaceLoaded]);
+
+  // Persist camera/orbit state on OrbitControls change (debounced, leading + trailing)
+  const cameraSaveTimeoutRef = useRef<number | null>(null);
+  const cameraSaveLeadingFiredRef = useRef(false);
+  useEffect(() => {
+    if (!projectHandle || !workspaceLoaded) return;
+    const controls = orbitControlsRef.current;
+    if (!controls) return;
+
+    const persistCamera = () => {
+      const three = threeObjectsRef.current;
+      const ctrl = orbitControlsRef.current;
+      if (!three || !ctrl || !projectHandle) return;
+      const cam: CameraState = {
+        position: three.camera.position.toArray() as [number, number, number],
+        fov: three.camera.fov,
+        zoom: three.camera.zoom,
+        orbitTarget: ctrl.target.toArray() as [number, number, number],
+      };
+      updateWorkspaceCameraState(projectHandle.name, cam);
+    };
+
+    const onControlsChange = () => {
+      // Leading edge: fire immediately on first change in a burst
+      if (!cameraSaveLeadingFiredRef.current) {
+        cameraSaveLeadingFiredRef.current = true;
+        persistCamera();
+      }
+      // Trailing edge: reset timer on every change, fire when idle
+      if (cameraSaveTimeoutRef.current) {
+        window.clearTimeout(cameraSaveTimeoutRef.current);
+      }
+      cameraSaveTimeoutRef.current = window.setTimeout(() => {
+        cameraSaveLeadingFiredRef.current = false;
+        persistCamera();
+      }, 500);
+    };
+
+    controls.addEventListener("change", onControlsChange);
+    return () => {
+      controls.removeEventListener("change", onControlsChange);
+      if (cameraSaveTimeoutRef.current) {
+        window.clearTimeout(cameraSaveTimeoutRef.current);
+        cameraSaveTimeoutRef.current = null;
+      }
+    };
+  }, [projectHandle, workspaceLoaded, threeReady]);
 
   const onPointerMove = useCallback(
     (e: ReactPointerEvent<HTMLDivElement>) => {
@@ -654,6 +707,7 @@ export default function App() {
   };
 
   const onThreeReady = useCallback(() => {
+    setThreeReady(true);
     const restore = pendingRestoreRef.current;
     if (!restore) return;
     pendingRestoreRef.current = null;
