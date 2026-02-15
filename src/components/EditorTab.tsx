@@ -1,6 +1,6 @@
 import { css } from "@emotion/react";
 import { Editor } from "@monaco-editor/react";
-import { forwardRef, RefObject, useEffect, useState } from "react";
+import { forwardRef, RefObject, useEffect, useMemo, useState } from "react";
 import { Button, Div, DivProps, H1, P, Span } from "style-props-html";
 import { TabManager } from "../hooks/useEditorTabAgent";
 import { useRegisterOpenSCADLanguage } from "../openscad-lang";
@@ -49,6 +49,60 @@ export default forwardRef<HTMLDivElement, EditorTabProps>(function EditorTab(
   const filename = agent.filename;
   const binary = filename ? isBinaryFile(filename) : false;
   const language = filename ? getLanguageForFile(filename) : "openscad";
+  const disambiguationByPath = useMemo(() => {
+    const byFilePath = new Map<string, string | null>();
+    const byFilename = new Map<string, typeof agent.tabs>();
+
+    for (const tab of agent.tabs) {
+      const existing = byFilename.get(tab.filename) ?? [];
+      existing.push(tab);
+      byFilename.set(tab.filename, existing);
+    }
+
+    const getParentSegments = (path: string): string[] =>
+      path.split("/").filter(Boolean).slice(0, -1);
+
+    const formatSuffix = (parentSegments: string[], depth: number): string => {
+      if (parentSegments.length === 0) return "";
+      const hitsProjectRoot = depth >= parentSegments.length;
+      const suffixSegments = hitsProjectRoot
+        ? parentSegments
+        : parentSegments.slice(-depth);
+      if (suffixSegments.length === 0) return "";
+      const suffix = suffixSegments.join("/");
+      return hitsProjectRoot ? suffix : `.../${suffix}`;
+    };
+
+    for (const tabsForName of byFilename.values()) {
+      if (tabsForName.length <= 1) {
+        byFilePath.set(tabsForName[0].filePath, null);
+        continue;
+      }
+
+      const parentSegments = tabsForName.map((tab) =>
+        getParentSegments(tab.filePath)
+      );
+      let depth = 1;
+      while (true) {
+        const suffixes = parentSegments.map((segments) =>
+          formatSuffix(segments, depth)
+        );
+        const unique = new Set(suffixes).size === suffixes.length;
+        const everyoneAtRoot = parentSegments.every(
+          (segments) => depth >= segments.length
+        );
+        if (unique || everyoneAtRoot) {
+          tabsForName.forEach((tab, index) => {
+            byFilePath.set(tab.filePath, suffixes[index] || null);
+          });
+          break;
+        }
+        depth += 1;
+      }
+    }
+
+    return byFilePath;
+  }, [agent.tabs]);
 
   return (
     <Div
@@ -85,6 +139,7 @@ export default forwardRef<HTMLDivElement, EditorTabProps>(function EditorTab(
         >
           {agent.tabs.map((tab, i) => {
             const isActive = i === agent.activeTabIndex;
+            const disambiguation = disambiguationByPath.get(tab.filePath);
             return (
               <Div
                 key={tab.filePath}
@@ -111,9 +166,20 @@ export default forwardRef<HTMLDivElement, EditorTabProps>(function EditorTab(
                   color={isActive ? "#1e88e5" : "#555"}
                   fontWeight={isActive ? 600 : "normal"}
                   whiteSpace="nowrap"
+                  title={tab.filePath}
                 >
                   {tab.filename}
                 </Span>
+                {disambiguation && (
+                  <Span
+                    fontSize="11px"
+                    color="#888"
+                    whiteSpace="nowrap"
+                    title={tab.filePath}
+                  >
+                    {disambiguation}
+                  </Span>
+                )}
                 {tab.dirty && (
                   <Span
                     fontSize="10px"

@@ -993,8 +993,10 @@ export default function App() {
             extraFiles,
             externalImports
           );
+      const renderedSourcePath =
+        tabManager.filePath ?? tabManager.filename ?? "unknown";
       setRenderedAtLeastOnce(true);
-      setLastRenderedFile(tabManager.filename);
+      setLastRenderedFile(renderedSourcePath);
       setLastRenderedBackend(backend);
       log("Done");
       setPartSettings({ ...partSettings });
@@ -1029,7 +1031,7 @@ export default function App() {
               exported: v.exported,
             }));
           updateWorkspaceLastRender(projectHandle.name, {
-            file: tabManager.filename ?? "unknown",
+            file: renderedSourcePath,
             backend,
             camera: camera ?? { position: [0, 0, 100], fov: 75, zoom: 1, orbitTarget: [0, 0, 0] },
             models,
