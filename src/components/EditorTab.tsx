@@ -168,18 +168,13 @@ export default forwardRef<HTMLDivElement, EditorTabProps>(function EditorTab(
                   whiteSpace="nowrap"
                   title={tab.filePath}
                 >
+                  {disambiguation && (
+                    <Span color={isActive ? "#7aa9d8" : "#9a9a9a"}>
+                      {disambiguation}/
+                    </Span>
+                  )}
                   {tab.filename}
                 </Span>
-                {disambiguation && (
-                  <Span
-                    fontSize="11px"
-                    color="#888"
-                    whiteSpace="nowrap"
-                    title={tab.filePath}
-                  >
-                    {disambiguation}
-                  </Span>
-                )}
                 {tab.dirty && (
                   <Span
                     fontSize="10px"
