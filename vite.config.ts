@@ -14,6 +14,7 @@ export default defineConfig({
   },
   optimizeDeps: {
     include: [],
+    exclude: ["web-tree-sitter"],
   },
   build: {
     commonjsOptions: {

@@ -2,7 +2,23 @@
   "permissions": {
     "allow": [
       "Bash(npx tsc:*)",
-      "Bash(npx vite build)"
+      "Bash(npx vite build)",
+      "WebFetch(domain:github.com)",
+      "WebSearch",
+      "WebFetch(domain:www.npmjs.com)",
+      "WebFetch(domain:raw.githubusercontent.com)",
+      "Bash(ls:*)",
+      "Bash(pnpm install:*)",
+      "Bash(pnpm approve-builds:*)",
+      "Bash(npx tree-sitter build:*)",
+      "WebFetch(domain:unpkg.com)",
+      "WebFetch(domain:app.unpkg.com)",
+      "Bash(TREE_SITTER_WASI_SDK_PATH=\"\" npx tree-sitter build:*)",
+      "Bash(powershell -Command \"Invoke-WebRequest -Uri ''https://github.com/WebAssembly/wasi-sdk/releases/download/wasi-sdk-29/wasi-sdk-29.0-x86_64-windows.tar.gz'' -OutFile ''$env:TEMP\\\\wasi-sdk.tar.gz''\")",
+      "Bash(powershell -Command:*)",
+      "Bash(powershell -ExecutionPolicy Bypass -File:*)",
+      "Bash(tar:*)",
+      "Bash(pnpm run build:*)"
     ]
   }
 }
