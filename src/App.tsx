@@ -32,7 +32,9 @@ import { createLabeledAxis, removeAxes } from "./AxisVisualizer";
 import { formatError } from "./utils/serialization";
 import ResizeSvgHelper from "./utils/ResizeSVGHelper";
 import ThreeViewer, { ThreeHandles } from "./components/ThreeViewer";
-import { collectImports } from "./utils/importUtils";
+import { collectAndPrepareVmFiles } from "./utils/importUtils";
+import { useOpenSCADLsp } from "./lsp/useOpenSCADLsp";
+import { useImportDiagnostics } from "./lsp/useImportDiagnostics";
 import { subscribeUiLog } from "./utils/uiLogger";
 import {
   storeDirectoryHandle,
@@ -194,6 +196,7 @@ function traverseSyncChildrenFirst(
 
 export default function App() {
   useRegisterOpenSCADLanguage();
+  const lspClientRef = useOpenSCADLsp();
   const fsaUnsupported = useFSAUnsupported();
 
   const consoleDivRef = useRef<HTMLDivElement>(null);
@@ -283,6 +286,14 @@ export default function App() {
   const [projectHandle, setProjectHandle] =
     useState<FileSystemDirectoryHandle | null>(null);
   const [workspaceLoaded, setWorkspaceLoaded] = useState(false);
+
+  // Import validation squiggles
+  useImportDiagnostics(
+    lspClientRef,
+    projectHandle,
+    tabManager.filePath,
+    tabManager.code
+  );
 
   // Initialize pane proportions once on mount when we know window width
   useEffect(() => {
@@ -904,9 +915,8 @@ export default function App() {
     name: string,
     part: OpenSCADPart,
     backend: "Manifold" | "CGAL",
-    path: string,
-    extraFiles: Record<string, string | Uint8Array>,
-    externalImports: string[]
+    vmFiles: Record<string, string | Uint8Array>,
+    vmMainPath: string
   ) =>
     new Promise<void>((resolve, reject) => {
       const w = new Worker(new URL("./openscad.worker.ts", import.meta.url), {
@@ -947,9 +957,8 @@ export default function App() {
         partName: name,
         part,
         backend,
-        path,
-        extraFiles,
-        externalImports,
+        vmFiles,
+        vmMainPath,
       });
     });
 
@@ -972,16 +981,27 @@ export default function App() {
     completedModelRef.current = {};
     log(`Found parts: ${Object.keys(parts).join(", ")}`);
     try {
-      // Collect .scad and .stl imports to upload into the worker VM
-      let extraFiles: Record<string, string | Uint8Array> = {};
-      let externalImports: string[] = [];
-      if (projectHandle && tabManager.filePath) {
-        const collected = await collectImports(
+      // Collect imports, fetch externals, rewrite paths — all on main thread
+      const lspClient = lspClientRef.current;
+      let vmFiles: Record<string, string | Uint8Array> = {};
+      let vmMainPath = "/@/input.scad";
+      if (lspClient && projectHandle && tabManager.filePath) {
+        const prepared = await collectAndPrepareVmFiles(
+          lspClient,
           projectHandle,
-          tabManager.filePath
+          tabManager.filePath,
+          tabManager.code,
+          (msg) => log(msg)
         );
-        extraFiles = collected.files;
-        externalImports = collected.externalImports;
+        vmFiles = prepared.vmFiles;
+        vmMainPath = prepared.vmMainPath;
+      } else if (tabManager.filePath) {
+        // Fallback: no LSP or no project — at minimum place main file
+        const { toVmProjectPath, rewriteProjectImportsForVm } = await import("./utils/importUtils");
+        vmMainPath = toVmProjectPath(tabManager.filePath);
+        vmFiles[vmMainPath] = rewriteProjectImportsForVm(tabManager.code, tabManager.filePath);
+      } else {
+        vmFiles["/@/input.scad"] = tabManager.code;
       }
       for (const [n, p] of Object.entries(parts))
         if (p.exported)
@@ -989,9 +1009,8 @@ export default function App() {
             n,
             p,
             backend,
-            tabManager.filePath || "input.scad",
-            extraFiles,
-            externalImports
+            vmFiles,
+            vmMainPath
           );
       const renderedSourcePath =
         tabManager.filePath ?? tabManager.filename ?? "unknown";

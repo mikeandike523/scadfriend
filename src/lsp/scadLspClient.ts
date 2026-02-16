@@ -1,6 +1,7 @@
 import type {
   LspRequest,
   LspResponse,
+  ScadImport,
   ScadSymbol,
   ScadSymbolReference,
 } from "./scadLspProtocol";
@@ -45,6 +46,8 @@ export class ScadLspClient {
         entry.resolve(msg.symbols);
       } else if (msg.type === "referencesResult") {
         entry.resolve(msg.references);
+      } else if (msg.type === "importsResult") {
+        entry.resolve(msg.imports);
       }
     });
   }
@@ -60,6 +63,12 @@ export class ScadLspClient {
   findReferences(text: string, name: string): Promise<ScadSymbolReference[]> {
     return this.send({ type: "findReferences", id: 0, text, name }) as Promise<
       ScadSymbolReference[]
+    >;
+  }
+
+  extractImports(text: string): Promise<ScadImport[]> {
+    return this.send({ type: "extractImports", id: 0, text }) as Promise<
+      ScadImport[]
     >;
   }
 

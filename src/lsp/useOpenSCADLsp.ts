@@ -29,4 +29,6 @@ export function useOpenSCADLsp() {
       client.dispose();
     };
   }, [monaco]);
+
+  return clientRef;
 }

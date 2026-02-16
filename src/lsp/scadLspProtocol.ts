@@ -21,6 +21,23 @@ export interface ScadSymbolReference {
   endColumn: number;
 }
 
+/** An import/include/use/surface directive extracted from OpenSCAD source. */
+export interface ScadImport {
+  kind: "include" | "use" | "import" | "surface";
+  /** Raw path string from source (e.g. "MCAD/nuts.scad", "@/lib/foo.scad"). */
+  path: string;
+  /** Position of the full statement (for context). */
+  startLine: number;
+  startColumn: number;
+  endLine: number;
+  endColumn: number;
+  /** Position of just the path portion (for squiggle underline). */
+  pathStartLine: number;
+  pathStartColumn: number;
+  pathEndLine: number;
+  pathEndColumn: number;
+}
+
 // ---- Request types ----
 
 interface ParseRequest {
@@ -36,7 +53,16 @@ interface FindReferencesRequest {
   name: string;
 }
 
-export type LspRequest = ParseRequest | FindReferencesRequest;
+interface ExtractImportsRequest {
+  type: "extractImports";
+  id: number;
+  text: string;
+}
+
+export type LspRequest =
+  | ParseRequest
+  | FindReferencesRequest
+  | ExtractImportsRequest;
 
 // ---- Response types ----
 
@@ -62,8 +88,15 @@ interface ErrorResponse {
   message: string;
 }
 
+interface ImportsResultResponse {
+  type: "importsResult";
+  id: number;
+  imports: ScadImport[];
+}
+
 export type LspResponse =
   | ReadyResponse
   | ParseResultResponse
   | ReferencesResultResponse
+  | ImportsResultResponse
   | ErrorResponse;

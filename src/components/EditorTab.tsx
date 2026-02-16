@@ -4,7 +4,6 @@ import { forwardRef, RefObject, useEffect, useMemo, useState } from "react";
 import { Button, Div, DivProps, H1, P, Span } from "style-props-html";
 import { TabManager } from "../hooks/useEditorTabAgent";
 import { useRegisterOpenSCADLanguage } from "../openscad-lang";
-import { useOpenSCADLsp } from "../lsp/useOpenSCADLsp";
 import { FaSave, FaTimes, FaBan } from "react-icons/fa";
 import {
   getLanguageForFile,
@@ -30,7 +29,6 @@ export default forwardRef<HTMLDivElement, EditorTabProps>(function EditorTab(
 ) {
   const showNoneSelectedDialog = !agent.fileIsLoaded;
   useRegisterOpenSCADLanguage();
-  useOpenSCADLsp();
   const [currentContainerWidth, setCurrentContainerWidth] = useState<
     number | null
   >(null);
