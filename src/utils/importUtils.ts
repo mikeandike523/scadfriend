@@ -82,7 +82,7 @@ export function rewriteProjectImportsForVm(
     return `${kw} <${rewritten}>`;
   });
 
-  out = out.replace(funcImportRegex, (match, fn, imp) => {
+  out = out.replace(funcImportRegex, (match, _fn, imp) => {
     const rewritten = rewritePath(imp);
     if (!rewritten || rewritten === imp) return match;
     return match.replace(imp, rewritten);
