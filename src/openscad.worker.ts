@@ -108,7 +108,7 @@ self.onmessage = async (event: MessageEvent<RenderRequest>) => {
   if (data.command !== "render") return;
   const {
     partName,
-    part,
+    
     backend = "Manifold",
     fonts = true,
     mcad = true,

@@ -31,7 +31,8 @@
     "src/utils/**/*.ts",
     "src/oscadUtil.ts",
     "src/vite-env.d.ts",
-    "src/lsp/scadLspProtocol.ts"
+    "src/lsp/scadLspProtocol.ts",
+    "src/lsp/scadLspClient.ts"
   ],
   "exclude": [
     "src/utils/fsaUtils.ts"

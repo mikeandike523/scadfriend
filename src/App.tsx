@@ -1003,15 +1003,20 @@ export default function App() {
       } else {
         vmFiles["/@/input.scad"] = tabManager.code;
       }
-      for (const [n, p] of Object.entries(parts))
-        if (p.exported)
-          await renderPartInWorker(
-            n,
-            p,
-            backend,
-            vmFiles,
-            vmMainPath
-          );
+      // Import rewriter for per-part source (only needed when we have a file path)
+      const rewrite = tabManager.filePath
+        ? (await import("./utils/importUtils")).rewriteProjectImportsForVm
+        : null;
+
+      for (const [n, p] of Object.entries(parts)) {
+        if (!p.exported) continue;
+        // Substitute main entry with this part's own source slice
+        const partSource = rewrite
+          ? rewrite(p.ownSourceCode, tabManager.filePath!)
+          : p.ownSourceCode;
+        const partVmFiles = { ...vmFiles, [vmMainPath]: partSource };
+        await renderPartInWorker(n, p, backend, partVmFiles, vmMainPath);
+      }
       const renderedSourcePath =
         tabManager.filePath ?? tabManager.filename ?? "unknown";
       setRenderedAtLeastOnce(true);

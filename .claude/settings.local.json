@@ -18,7 +18,8 @@
       "Bash(powershell -Command:*)",
       "Bash(powershell -ExecutionPolicy Bypass -File:*)",
       "Bash(tar:*)",
-      "Bash(pnpm run build:*)"
+      "Bash(pnpm run build:*)",
+      "Bash(pnpm tsc:*)"
     ]
   }
 }
