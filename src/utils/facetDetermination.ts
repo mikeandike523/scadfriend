@@ -1,5 +1,10 @@
 import * as THREE from "three";
 
+// Cross-product magnitude below which a triangle's normal is considered
+// unreliable. Consistent with outlineRenderer's NORMAL_EPS_SQ = 1e-10
+// (sqrt(1e-10) ≈ 3.16e-6, so 1e-8 is safely above the noise floor).
+const DEGENERATE_NORMAL_LEN = 1e-8;
+
 export interface Facet {
   triangleIndices: number[];
   normal: THREE.Vector3;
@@ -34,7 +39,7 @@ function triNormal(t: Tri): THREE.Vector3 {
   const ac = new THREE.Vector3().subVectors(t.c, t.a);
   const n = ab.cross(ac);
   const len = n.length();
-  if (len === 0) return new THREE.Vector3(0, 0, 0);
+  if (len < DEGENERATE_NORMAL_LEN) return new THREE.Vector3(0, 0, 0);
   return n.divideScalar(len);
 }
 
@@ -119,7 +124,7 @@ export function determineFacets(geom: THREE.BufferGeometry, options: FacetOption
   for (let seed = 0; seed < n; seed++) {
     if (visited[seed]) continue;
 
-    if (areas[seed] === 0) {
+    if (normals[seed].lengthSq() === 0) {
       visited[seed] = 1;
       facets.push({ triangleIndices: [seed], normal: normals[seed].clone(), planeOrigin: centroids[seed].clone() });
       continue;
