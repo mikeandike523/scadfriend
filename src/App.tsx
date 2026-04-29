@@ -37,6 +37,7 @@ import { useOpenSCADLsp } from "./lsp/useOpenSCADLsp";
 import { useImportDiagnostics } from "./lsp/useImportDiagnostics";
 import { subscribeUiLog, emitUiLog } from "./utils/uiLogger";
 import { determineFacets, buildFaceIDArray } from "./utils/facetDetermination";
+import { buildOutlineGeometry, buildOutlineMaterial } from "./utils/outlineRenderer";
 import {
   storeDirectoryHandle,
   getStoredDirectoryHandle,
@@ -660,11 +661,23 @@ export default function App() {
         emitUiLog("info", `Faceted "${name}": ${facets.length} facet${facets.length !== 1 ? "s" : ""}`);
         const mat = new THREE.MeshPhongMaterial({
           color: getColorOrDefault(part.color),
+          polygonOffset: true,
+          polygonOffsetFactor: 1,
+          polygonOffsetUnits: 1,
         });
         const mesh = new THREE.Mesh(geom, mat);
         mesh.name = name;
         mesh.castShadow = mesh.receiveShadow = true;
         partsGroup.add(mesh);
+
+        const outlineGeo = buildOutlineGeometry(geom, faceIDs);
+        if (outlineGeo) {
+          const outlineMesh = new THREE.Mesh(outlineGeo, buildOutlineMaterial());
+          // keep=true: skip the partSettings visibility traversal;
+          // the outline is still hidden when its parent mesh is hidden.
+          outlineMesh.userData.keep = true;
+          mesh.add(outlineMesh);
+        }
       } catch {
         // ignored
       }
