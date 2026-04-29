@@ -1,9 +1,12 @@
 import * as THREE from "three";
 
-// Cross-product magnitude below which a triangle's normal is considered
-// unreliable. Consistent with outlineRenderer's NORMAL_EPS_SQ = 1e-10
-// (sqrt(1e-10) ≈ 3.16e-6, so 1e-8 is safely above the noise floor).
-const DEGENERATE_NORMAL_LEN = 1e-8;
+// Cross-product magnitude below which triNormal returns a zero vector.
+// The only true failure case is len = 0 (produces NaN via 0/0); any positive
+// len, however small, yields a valid unit normal because the numerator
+// components are bounded by len itself.  The adaptive epsilon (areaEpsilonScale
+// / areaCap) already handles noisy normals on tiny triangles, so this guard
+// only needs to catch genuine float-arithmetic breakdown, not noise.
+const DEGENERATE_NORMAL_LEN = 1e-30;
 
 export interface Facet {
   triangleIndices: number[];
@@ -47,23 +50,40 @@ function planeDist(p: THREE.Vector3, origin: THREE.Vector3, normal: THREE.Vector
   return new THREE.Vector3().subVectors(p, origin).dot(normal);
 }
 
-// Snap coordinates to avoid float key mismatches across triangles sharing a vertex.
-const SNAP = 1e7;
-function snapCoord(v: THREE.Vector3): string {
-  return `${Math.round(v.x * SNAP)},${Math.round(v.y * SNAP)},${Math.round(v.z * SNAP)}`;
+// ---------------------------------------------------------------------------
+// Dynamic snap factor
+// ---------------------------------------------------------------------------
+
+// Binary STL stores every vertex as a 32-bit float independently per triangle.
+// The worst-case disagreement between two triangles sharing a vertex is 1 ULP:
+//   ULP(v) ≈ v × 2⁻²³
+// We need: snap cell (= 1/SNAP) ≥ ULP  →  SNAP ≤ 2²³ / maxCoord.
+// We use 2²¹ (a 4× safety margin) so up to ~4 ULPs of disagreement are absorbed.
+function computeSnap(pos: THREE.BufferAttribute): number {
+  let maxCoord = 0;
+  for (let i = 0; i < pos.count; i++) {
+    maxCoord = Math.max(maxCoord,
+      Math.abs(pos.getX(i)), Math.abs(pos.getY(i)), Math.abs(pos.getZ(i)));
+  }
+  if (maxCoord < 1e-10) return 1e5; // degenerate / origin-only mesh
+  return Math.max(1, (2 ** 21) / maxCoord);
 }
-function edgeKey(va: THREE.Vector3, vb: THREE.Vector3): string {
-  const ka = snapCoord(va);
-  const kb = snapCoord(vb);
+
+function snapCoord(v: THREE.Vector3, snap: number): string {
+  return `${Math.round(v.x * snap)},${Math.round(v.y * snap)},${Math.round(v.z * snap)}`;
+}
+function edgeKey(va: THREE.Vector3, vb: THREE.Vector3, snap: number): string {
+  const ka = snapCoord(va, snap);
+  const kb = snapCoord(vb, snap);
   return ka < kb ? `${ka}|${kb}` : `${kb}|${ka}`;
 }
 
-function buildNeighbours(tris: Tri[]): number[][] {
+function buildNeighbours(tris: Tri[], snap: number): number[][] {
   const edgeMap = new Map<string, number[]>();
   for (let i = 0; i < tris.length; i++) {
     const { a, b, c } = tris[i];
     for (const [va, vb] of [[a, b], [b, c], [c, a]] as [THREE.Vector3, THREE.Vector3][]) {
-      const key = edgeKey(va, vb);
+      const key = edgeKey(va, vb, snap);
       let list = edgeMap.get(key);
       if (!list) { list = []; edgeMap.set(key, list); }
       list.push(i);
@@ -109,6 +129,9 @@ export function determineFacets(geom: THREE.BufferGeometry, options: FacetOption
     planeDistEpsilon  = 1e-4,
   } = options;
 
+  const posAttr = geom.getAttribute("position") as THREE.BufferAttribute;
+  const snap = computeSnap(posAttr);
+
   const tris = extractTris(geom);
   const n = tris.length;
   if (n === 0) return [];
@@ -116,7 +139,7 @@ export function determineFacets(geom: THREE.BufferGeometry, options: FacetOption
   const normals   = tris.map(triNormal);
   const areas     = tris.map(triArea);
   const centroids = tris.map(triCentroid);
-  const nbrs      = buildNeighbours(tris);
+  const nbrs      = buildNeighbours(tris, snap);
 
   const facets: Facet[] = [];
   const visited = new Uint8Array(n);

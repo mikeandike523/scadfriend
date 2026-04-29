@@ -8,16 +8,19 @@ import * as THREE from "three";
 // adjacent to that edge.
 const MESH_QUAD_SIZE_PERCENT = 0.005;
 
-// Squared cross-product magnitude below which a triangle is considered
-// degenerate and skipped entirely.
-const NORMAL_EPS_SQ = 1e-10;
+// Squared cross-product magnitude below which a triangle is skipped from edge
+// extraction.  Only guards against true 0/0 NaN — any positive cross-product
+// yields a finite unit normal.  Tiny-triangle noise is handled downstream by
+// the adaptive epsilon in facetDetermination; here we just need valid geometry.
+const NORMAL_EPS_SQ = 1e-28;
 
-// Squared edge length below which a quad would degenerate (zero edgeDir).
-// Skips edges shorter than ~3.16e-6 units.
-const MIN_EDGE_LEN_SQ = 1e-11;
+// Squared edge length below which a quad is skipped (zero edgeDir → NaN
+// positions).  Set just above the snap-grid resolution: SNAP=1e7 collapses
+// vertices within ~8.7e-8 of each other, so anything shorter than ~1e-7 may
+// already be a collapsed edge in the adjacency map anyway.
+const MIN_EDGE_LEN_SQ = 1e-14;
 
-// Coordinate snap precision for vertex identity (7 decimal digits).
-const SNAP = 1e7;
+// Dynamic snap — see computeSnap() below.
 
 // ---------------------------------------------------------------------------
 // Shaders
@@ -92,15 +95,31 @@ interface EdgeEntry {
 }
 
 // ---------------------------------------------------------------------------
+// Dynamic snap factor (mirrors facetDetermination.ts)
+// ---------------------------------------------------------------------------
+
+// SNAP ≤ 2²³ / maxCoord absorbs 1 ULP of 32-bit STL float disagreement.
+// 2²¹ gives a 4× safety margin.
+function computeSnap(pos: THREE.BufferAttribute): number {
+  let maxCoord = 0;
+  for (let i = 0; i < pos.count; i++) {
+    maxCoord = Math.max(maxCoord,
+      Math.abs(pos.getX(i)), Math.abs(pos.getY(i)), Math.abs(pos.getZ(i)));
+  }
+  if (maxCoord < 1e-10) return 1e5;
+  return Math.max(1, (2 ** 21) / maxCoord);
+}
+
+// ---------------------------------------------------------------------------
 // Vertex key helpers (snapped coordinates for manifold edge matching)
 // ---------------------------------------------------------------------------
 
-function snapKey(x: number, y: number, z: number): string {
-  return `${Math.round(x * SNAP)},${Math.round(y * SNAP)},${Math.round(z * SNAP)}`;
+function snapKey(x: number, y: number, z: number, snap: number): string {
+  return `${Math.round(x * snap)},${Math.round(y * snap)},${Math.round(z * snap)}`;
 }
 
-function vertKey(pos: THREE.BufferAttribute, i: number): string {
-  return snapKey(pos.getX(i), pos.getY(i), pos.getZ(i));
+function vertKey(pos: THREE.BufferAttribute, i: number, snap: number): string {
+  return snapKey(pos.getX(i), pos.getY(i), pos.getZ(i), snap);
 }
 
 function edgeKey(kA: string, kB: string): string {
@@ -148,7 +167,8 @@ function buildGoodTriangles(pos: THREE.BufferAttribute): GoodTri[] {
 
 function buildEdgeAdjacency(
   pos: THREE.BufferAttribute,
-  goodTris: GoodTri[]
+  goodTris: GoodTri[],
+  snap: number
 ): Map<string, EdgeEntry> {
   const map = new Map<string, EdgeEntry>();
 
@@ -158,8 +178,8 @@ function buildEdgeAdjacency(
     const pairs: [number, number][] = [[i0, i1], [i1, i2], [i2, i0]];
 
     for (const [iA, iB] of pairs) {
-      const kA = vertKey(pos, iA);
-      const kB = vertKey(pos, iB);
+      const kA = vertKey(pos, iA, snap);
+      const kB = vertKey(pos, iB, snap);
       const key = edgeKey(kA, kB);
 
       if (!map.has(key)) {
@@ -183,9 +203,10 @@ function buildEdgeAdjacency(
 function extractFacetEdges(
   pos: THREE.BufferAttribute,
   faceIDs: Uint32Array,
-  goodTris: GoodTri[]
+  goodTris: GoodTri[],
+  snap: number
 ): EdgeEntry[] {
-  const adjMap = buildEdgeAdjacency(pos, goodTris);
+  const adjMap = buildEdgeAdjacency(pos, goodTris, snap);
   const result: EdgeEntry[] = [];
 
   for (const entry of adjMap.values()) {
@@ -207,9 +228,10 @@ function extractFacetEdges(
 // All edges of good triangles regardless of face assignment (triangle outline mode).
 function extractTriangleEdges(
   pos: THREE.BufferAttribute,
-  goodTris: GoodTri[]
+  goodTris: GoodTri[],
+  snap: number
 ): EdgeEntry[] {
-  const adjMap = buildEdgeAdjacency(pos, goodTris);
+  const adjMap = buildEdgeAdjacency(pos, goodTris, snap);
   const result: EdgeEntry[] = [];
   for (const entry of adjMap.values()) {
     if (entry.pA.distanceToSquared(entry.pB) < MIN_EDGE_LEN_SQ) continue;
@@ -364,13 +386,14 @@ export function buildOutlineGeometry(
   const pos = geom.getAttribute("position") as THREE.BufferAttribute;
   if (!pos || pos.count < 3) return null;
 
+  const snap = computeSnap(pos);
   const goodTris = buildGoodTriangles(pos);
   if (goodTris.length === 0) return null;
 
   const edges =
     mode === "triangles"
-      ? extractTriangleEdges(pos, goodTris)
-      : extractFacetEdges(pos, faceIDs, goodTris);
+      ? extractTriangleEdges(pos, goodTris, snap)
+      : extractFacetEdges(pos, faceIDs, goodTris, snap);
   return buildLineGeometry(pos, edges);
 }
 
