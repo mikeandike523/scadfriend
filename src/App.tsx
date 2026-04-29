@@ -35,7 +35,8 @@ import ThreeViewer, { ThreeHandles } from "./components/ThreeViewer";
 import { collectAndPrepareVmFiles } from "./utils/importUtils";
 import { useOpenSCADLsp } from "./lsp/useOpenSCADLsp";
 import { useImportDiagnostics } from "./lsp/useImportDiagnostics";
-import { subscribeUiLog } from "./utils/uiLogger";
+import { subscribeUiLog, emitUiLog } from "./utils/uiLogger";
+import { determineFacets, buildFaceIDArray } from "./utils/facetDetermination";
 import {
   storeDirectoryHandle,
   getStoredDirectoryHandle,
@@ -651,6 +652,12 @@ export default function App() {
           copySharedBufferToArrayBuffer(part.stl.buffer)
         );
         geom.rotateX(-Math.PI / 2);
+        emitUiLog("info", `Faceting "${name}"...`);
+        const facets = determineFacets(geom);
+        const triCount = geom.getAttribute("position").count / 3;
+        const faceIDs = buildFaceIDArray(triCount, facets);
+        console.log(`[Faceting] "${name}" faceIDs:`, Array.from(faceIDs));
+        emitUiLog("info", `Faceted "${name}": ${facets.length} facet${facets.length !== 1 ? "s" : ""}`);
         const mat = new THREE.MeshPhongMaterial({
           color: getColorOrDefault(part.color),
         });
