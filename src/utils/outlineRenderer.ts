@@ -408,8 +408,8 @@ export function buildOutlineMaterial(): THREE.ShaderMaterial {
     uniforms: {
       uLineColor:       { value: new THREE.Color(0x111111) },
       uDebugColor:      { value: new THREE.Color(0xff6600) },
-      uLineHalfWidthPx: { value: 1.2 },
-      uOpacity:         { value: 1.0 },
+      uLineHalfWidthPx: { value: 0.5 },
+      uOpacity:         { value: 0.8 },
       uDebug:           { value: false },
     },
     transparent: true,
