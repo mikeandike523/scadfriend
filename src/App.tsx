@@ -206,6 +206,7 @@ export default function App() {
   const [isProcessing, setIsProcessing] = useState(false);
   const [renderedAtLeastOnce, setRenderedAtLeastOnce] = useState(false);
   const [partsPanelOpen, setPartsPanelOpen] = useState(true);
+  const [outlineMode, setOutlineMode] = useState<"facets" | "triangles">("facets");
   const completedModelRef = useRef<Record<string, OpenSCADPartWithSTL>>({});
   const [partSettings, setPartSettings] = useState<
     Record<string, PartSettings>
@@ -670,14 +671,20 @@ export default function App() {
         mesh.castShadow = mesh.receiveShadow = true;
         partsGroup.add(mesh);
 
-        const outlineGeo = buildOutlineGeometry(geom, faceIDs);
-        if (outlineGeo) {
-          const outlineMesh = new THREE.Mesh(outlineGeo, buildOutlineMaterial());
-          // keep=true: skip the partSettings visibility traversal;
-          // the outline is still hidden when its parent mesh is hidden.
-          outlineMesh.userData.keep = true;
-          mesh.add(outlineMesh);
-        }
+        const addOutline = (mode: "facets" | "triangles") => {
+          const geo = buildOutlineGeometry(geom, faceIDs, mode);
+          if (!geo) return;
+          const m = new THREE.Mesh(geo, buildOutlineMaterial());
+          // keep=true: excluded from partSettings visibility traversal;
+          // still hidden automatically when the parent mesh is hidden.
+          m.userData.keep = true;
+          m.userData.isFacetOutline = mode === "facets";
+          m.userData.isTriOutline   = mode === "triangles";
+          m.visible = outlineMode === mode;
+          mesh.add(m);
+        };
+        addOutline("facets");
+        addOutline("triangles");
       } catch {
         // ignored
       }
@@ -918,6 +925,13 @@ export default function App() {
   }, [partSettings]);
 
   useEffect(updateVisibility, [updateVisibility]);
+
+  useEffect(() => {
+    threeObjectsRef.current?.scene.traverse((child) => {
+      if (child.userData.isFacetOutline) child.visible = outlineMode === "facets";
+      if (child.userData.isTriOutline)   child.visible = outlineMode === "triangles";
+    });
+  }, [outlineMode]);
 
   useEffect(() => {
     return subscribeUiLog((entry) => {
@@ -1396,6 +1410,35 @@ export default function App() {
                   controlsRef={orbitControlsRef}
                   onReady={onThreeReady}
                 />
+                <Div
+                  position="absolute"
+                  top="8px"
+                  right="8px"
+                  zIndex={5}
+                  display="flex"
+                  gap="2px"
+                  background="rgba(255,255,255,0.92)"
+                  padding="3px"
+                  borderRadius="6px"
+                  boxShadow="0 2px 8px rgba(0,0,0,0.2)"
+                >
+                  {(["facets", "triangles"] as const).map((mode) => (
+                    <Button
+                      key={mode}
+                      onClick={() => setOutlineMode(mode)}
+                      fontSize="0.7rem"
+                      padding="3px 8px"
+                      borderRadius="4px"
+                      border="none"
+                      cursor="pointer"
+                      background={outlineMode === mode ? "#1e88e5" : "transparent"}
+                      color={outlineMode === mode ? "white" : "#444"}
+                      fontWeight={outlineMode === mode ? "bold" : "normal"}
+                    >
+                      {mode === "facets" ? "Facets" : "Triangles"}
+                    </Button>
+                  ))}
+                </Div>
                 <Div
                   position="absolute"
                   top={0}

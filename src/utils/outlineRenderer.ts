@@ -12,6 +12,10 @@ const MESH_QUAD_SIZE_PERCENT = 0.005;
 // degenerate and skipped entirely.
 const NORMAL_EPS_SQ = 1e-10;
 
+// Squared edge length below which a quad would degenerate (zero edgeDir).
+// Skips edges shorter than ~3.16e-6 units.
+const MIN_EDGE_LEN_SQ = 1e-11;
+
 // Coordinate snap precision for vertex identity (7 decimal digits).
 const SNAP = 1e7;
 
@@ -185,6 +189,7 @@ function extractFacetEdges(
   const result: EdgeEntry[] = [];
 
   for (const entry of adjMap.values()) {
+    if (entry.pA.distanceToSquared(entry.pB) < MIN_EDGE_LEN_SQ) continue;
     const { tris } = entry;
     if (tris.length === 1) {
       result.push(entry); // mesh boundary
@@ -196,6 +201,20 @@ function extractFacetEdges(
     // non-manifold (3+) — skip
   }
 
+  return result;
+}
+
+// All edges of good triangles regardless of face assignment (triangle outline mode).
+function extractTriangleEdges(
+  pos: THREE.BufferAttribute,
+  goodTris: GoodTri[]
+): EdgeEntry[] {
+  const adjMap = buildEdgeAdjacency(pos, goodTris);
+  const result: EdgeEntry[] = [];
+  for (const entry of adjMap.values()) {
+    if (entry.pA.distanceToSquared(entry.pB) < MIN_EDGE_LEN_SQ) continue;
+    result.push(entry);
+  }
   return result;
 }
 
@@ -333,12 +352,14 @@ function buildLineGeometry(
 
 /**
  * Build the edge-outline BufferGeometry for a (non-indexed) STL BufferGeometry.
- * Produces two cross-quads per facet-boundary / mesh-boundary edge.
+ * mode "facets"    — one quad-pair per facet-boundary / mesh-boundary edge (default).
+ * mode "triangles" — one quad-pair per edge of every good triangle.
  * Returns null if the geometry has no usable triangles.
  */
 export function buildOutlineGeometry(
   geom: THREE.BufferGeometry,
-  faceIDs: Uint32Array
+  faceIDs: Uint32Array,
+  mode: "facets" | "triangles" = "facets"
 ): THREE.BufferGeometry | null {
   const pos = geom.getAttribute("position") as THREE.BufferAttribute;
   if (!pos || pos.count < 3) return null;
@@ -346,7 +367,10 @@ export function buildOutlineGeometry(
   const goodTris = buildGoodTriangles(pos);
   if (goodTris.length === 0) return null;
 
-  const edges = extractFacetEdges(pos, faceIDs, goodTris);
+  const edges =
+    mode === "triangles"
+      ? extractTriangleEdges(pos, goodTris)
+      : extractFacetEdges(pos, faceIDs, goodTris);
   return buildLineGeometry(pos, edges);
 }
 
