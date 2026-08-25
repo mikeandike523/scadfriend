@@ -8,7 +8,7 @@ import {
   getFileHandleFromPath,
 } from "../utils/importUtils";
 
-const OWNER = "scadfriend-import-validator";
+const OWNER = "designcsg-import-validator";
 const DEBOUNCE_MS = 500;
 
 /**

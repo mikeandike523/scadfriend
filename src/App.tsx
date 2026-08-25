@@ -1159,7 +1159,7 @@ export default function App() {
           padding="0 32px"
         >
           <P textAlign="center" maxWidth="600px">
-            SCADFriend works by using local folders to organize projects.
+            DesignCSG works by using local folders to organize projects.
           </P>
           <P textAlign="center" maxWidth="600px">
             Select a folder by clicking the button below.
