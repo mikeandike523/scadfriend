@@ -83,7 +83,7 @@ export function identifyParts(sourceCode: string): Record<string, OpenSCADPart> 
   // Determine preserved vs export-detection slices
   const firstExportIdx = lines.findIndex(line => EXPORT_REGEX.test(line));
   if (firstExportIdx === -1) {
-    return { Full: { ownSourceCode: normalized, exported: false } };
+    return Object.create(null);
   }
   const preservedLines = lines.slice(0, firstExportIdx);
   const exportDetectionLines = lines.slice(firstExportIdx);
@@ -107,4 +107,9 @@ export function identifyParts(sourceCode: string): Record<string, OpenSCADPart> 
   }
 
   return parts;
+}
+
+/** Whether the source contains at least one enabled // @export block. */
+export function hasEnabledExports(sourceCode: string): boolean {
+  return Object.values(identifyParts(sourceCode)).some((part) => part.exported);
 }

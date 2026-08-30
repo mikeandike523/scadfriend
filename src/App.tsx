@@ -27,7 +27,11 @@ import FileBrowser from "./components/FileBrowser";
 import useTabManager from "./hooks/useEditorTabAgent";
 import useFSAUnsupported from "./hooks/useFSAUnsupported";
 import { useRegisterOpenSCADLanguage } from "./openscad-lang";
-import { identifyParts, OpenSCADPart } from "./openscad-parsing";
+import {
+  hasEnabledExports,
+  identifyParts,
+  OpenSCADPart,
+} from "./openscad-parsing";
 import { createLabeledAxis, removeAxes } from "./AxisVisualizer";
 import { formatError } from "./utils/serialization";
 import ResizeSvgHelper from "./utils/ResizeSVGHelper";
@@ -50,6 +54,7 @@ import {
   updateWorkspaceSelections,
   updateWorkspaceOpenTabs,
   updateWorkspaceLastRender,
+  updateWorkspaceLastRenderableFile,
   updateWorkspaceCameraState,
   clearWorkspaceState,
   warnOnce,
@@ -92,6 +97,20 @@ const WRITE_VM_DEBUG =
 type OpenSCADPartWithSTL = OpenSCADPart & { stl?: Uint8Array };
 type PartSettings = { visible: boolean; exported: boolean };
 type PaneLayout = { fileBrowser: number; editor: number; viewer: number };
+type LogPanelStatus = "idle" | "processing" | "error" | "success";
+type RenderSource = {
+  code: string;
+  filePath: string;
+  filename: string;
+  parts: Record<string, OpenSCADPart>;
+};
+
+const LOG_PANEL_BACKGROUNDS: Record<LogPanelStatus, string> = {
+  idle: "#eeeeee",
+  processing: "#d9efff",
+  error: "#ffd6d6",
+  success: "#dff5df",
+};
 
 const MIN_PANE_FRAC: PaneLayout = {
   fileBrowser: 0.2,
@@ -203,6 +222,8 @@ export default function App() {
 
   const consoleDivRef = useRef<HTMLDivElement>(null);
   const [messages, setMessages] = useState<string[]>([]);
+  const [logPanelStatus, setLogPanelStatus] =
+    useState<LogPanelStatus>("idle");
   const [isProcessing, setIsProcessing] = useState(false);
   const [renderedAtLeastOnce, setRenderedAtLeastOnce] = useState(false);
   const [partsPanelOpen, setPartsPanelOpen] = useState(true);
@@ -215,6 +236,7 @@ export default function App() {
   const [lastRenderedBackend, setLastRenderedBackend] = useState<
     "Manifold" | "CGAL" | null
   >(null);
+  const lastRenderableFilePathRef = useRef<string | null>(null);
   const pendingRestoreRef = useRef<{
     file: string;
     backend: "Manifold" | "CGAL";
@@ -339,6 +361,9 @@ export default function App() {
       if (!projectHandle) return;
       const state = await loadWorkspaceState(projectHandle.name);
       if (cancelled) return;
+
+      lastRenderableFilePathRef.current =
+        state.lastRenderableFilePath ?? null;
 
       // Restore layout
       if (state.layout) {
@@ -500,6 +525,31 @@ export default function App() {
       }
     };
   }, [tabManager.tabs, tabManager.activeTabIndex, projectHandle, workspaceLoaded]);
+
+  // Remember a selection only while its live editor contents are renderable.
+  // If it later becomes invalid, keep the path so it can be revalidated when
+  // used as a fallback.
+  useEffect(() => {
+    const path = tabManager.filePath;
+    if (!path) return;
+    try {
+      if (!hasEnabledExports(tabManager.code)) return;
+    } catch {
+      return;
+    }
+    if (lastRenderableFilePathRef.current === path) return;
+
+    lastRenderableFilePathRef.current = path;
+    if (projectHandle && workspaceLoaded) {
+      updateWorkspaceLastRenderableFile(projectHandle.name, path);
+    }
+  }, [
+    tabManager.activeTabIndex,
+    tabManager.filePath,
+    tabManager.code,
+    projectHandle,
+    workspaceLoaded,
+  ]);
 
   // Persist camera/orbit state via pointer events on viewer container
   // (debounced, leading + trailing, 500ms)
@@ -935,6 +985,7 @@ export default function App() {
 
   useEffect(() => {
     return subscribeUiLog((entry) => {
+      if (entry.level === "error") setLogPanelStatus("error");
       const prefix =
         entry.level === "error"
           ? "ERROR"
@@ -996,11 +1047,86 @@ export default function App() {
       });
     });
 
+  const resolveRenderSource = async (): Promise<RenderSource | null> => {
+    if (tabManager.filePath && tabManager.filename) {
+      const currentParts = identifyParts(tabManager.code);
+      if (Object.values(currentParts).some((part) => part.exported)) {
+        return {
+          code: tabManager.code,
+          filePath: tabManager.filePath,
+          filename: tabManager.filename,
+          parts: currentParts,
+        };
+      }
+    }
+
+    const fallbackPath = lastRenderableFilePathRef.current;
+    if (!fallbackPath || fallbackPath === tabManager.filePath) return null;
+
+    // A still-open tab may outlive a file deleted or renamed on disk. Verify
+    // project-backed fallbacks still exist before using their in-memory code.
+    let fallbackHandle: FileSystemFileHandle | null = null;
+    if (projectHandle) {
+      fallbackHandle = await getFileHandleByPath(projectHandle, fallbackPath);
+      if (!fallbackHandle) return null;
+    }
+
+    const openFallback = tabManager.tabs.find(
+      (tab) => tab.filePath === fallbackPath
+    );
+    if (openFallback) {
+      const parts = identifyParts(openFallback.code);
+      if (!Object.values(parts).some((part) => part.exported)) return null;
+      return {
+        code: openFallback.code,
+        filePath: openFallback.filePath,
+        filename: openFallback.filename,
+        parts,
+      };
+    }
+
+    if (!fallbackHandle) return null;
+
+    try {
+      const code = await (await fallbackHandle.getFile()).text();
+      const parts = identifyParts(code);
+      if (!Object.values(parts).some((part) => part.exported)) return null;
+      return {
+        code,
+        filePath: fallbackPath,
+        filename: fallbackHandle.name,
+        parts,
+      };
+    } catch {
+      return null;
+    }
+  };
+
   const renderModel = async (backend: "Manifold" | "CGAL") => {
     if (isProcessing) return log("Already processing");
-    const parts = identifyParts(tabManager.code);
-    if (!Object.keys(parts).length)
-      return alert('No parts exported. Use "// @export".');
+    clearLogs();
+    setLogPanelStatus("processing");
+    setIsProcessing(true);
+
+    let source: RenderSource | null;
+    try {
+      source = await resolveRenderSource();
+    } catch (err) {
+      setLogPanelStatus("error");
+      log(`ERROR: Failed to inspect exports: ${formatError(err)}`);
+      setIsProcessing(false);
+      return;
+    }
+    if (!source) {
+      setLogPanelStatus("error");
+      log(
+        'ERROR: Current file has no exports. Add a "// @export" comment to render it.'
+      );
+      setIsProcessing(false);
+      return;
+    }
+
+    const { code, filePath, parts } = source;
     Object.entries(parts).forEach(([n, p]) => {
       if (!(n in partSettings))
         partSettings[n] = { visible: true, exported: p.exported };
@@ -1010,53 +1136,48 @@ export default function App() {
       if (!(n in parts)) delete partSettings[n];
     });
     setPartSettings({ ...partSettings });
-    clearLogs();
-    setIsProcessing(true);
     completedModelRef.current = {};
+    if (filePath !== tabManager.filePath) {
+      log(`Current file has no exports; rendering "${filePath}" instead.`);
+    }
     log(`Found parts: ${Object.keys(parts).join(", ")}`);
     try {
       // Collect imports, fetch externals, rewrite paths — all on main thread
       const lspClient = lspClientRef.current;
       let vmFiles: Record<string, string | Uint8Array> = {};
       let vmMainPath = "/@/input.scad";
-      if (lspClient && projectHandle && tabManager.filePath) {
+      if (lspClient && projectHandle) {
         const prepared = await collectAndPrepareVmFiles(
           lspClient,
           projectHandle,
-          tabManager.filePath,
-          tabManager.code,
+          filePath,
+          code,
           (msg) => log(msg)
         );
         vmFiles = prepared.vmFiles;
         vmMainPath = prepared.vmMainPath;
-      } else if (tabManager.filePath) {
+      } else {
         // Fallback: no LSP or no project — at minimum place main file
         const { toVmProjectPath, rewriteProjectImportsForVm } = await import("./utils/importUtils");
-        vmMainPath = toVmProjectPath(tabManager.filePath);
-        vmFiles[vmMainPath] = rewriteProjectImportsForVm(tabManager.code, tabManager.filePath);
-      } else {
-        vmFiles["/@/input.scad"] = tabManager.code;
+        vmMainPath = toVmProjectPath(filePath);
+        vmFiles[vmMainPath] = rewriteProjectImportsForVm(code, filePath);
       }
       // Import rewriter for per-part source (only needed when we have a file path)
-      const rewrite = tabManager.filePath
-        ? (await import("./utils/importUtils")).rewriteProjectImportsForVm
-        : null;
+      const rewrite = (await import("./utils/importUtils")).rewriteProjectImportsForVm;
 
       for (const [n, p] of Object.entries(parts)) {
         if (!p.exported) continue;
         // Substitute main entry with this part's own source slice
-        const partSource = rewrite
-          ? rewrite(p.ownSourceCode, tabManager.filePath!)
-          : p.ownSourceCode;
+        const partSource = rewrite(p.ownSourceCode, filePath);
         const partVmFiles = { ...vmFiles, [vmMainPath]: partSource };
         await renderPartInWorker(n, p, backend, partVmFiles, vmMainPath);
       }
-      const renderedSourcePath =
-        tabManager.filePath ?? tabManager.filename ?? "unknown";
+      const renderedSourcePath = filePath;
       setRenderedAtLeastOnce(true);
       setLastRenderedFile(renderedSourcePath);
       setLastRenderedBackend(backend);
       log("Done");
+      setLogPanelStatus("success");
       setPartSettings({ ...partSettings });
       updateThreeScene();
 
@@ -1100,8 +1221,8 @@ export default function App() {
         }
       }
     } catch (err) {
-      alert("Rendering failed");
-      log(`Fail: ${formatError(err)}`);
+      setLogPanelStatus("error");
+      log(`ERROR: Rendering failed: ${formatError(err)}`);
     } finally {
       setIsProcessing(false);
     }
@@ -1509,10 +1630,13 @@ export default function App() {
               ref={consoleDivRef}
               overflow="auto"
               whiteSpace="pre-wrap"
-              background="darkgreen"
-              color="white"
+              background={LOG_PANEL_BACKGROUNDS[logPanelStatus]}
+              color="#222"
               fontFamily="'Fira Code', monospace"
               width="100%"
+              css={css`
+                transition: background-color 160ms ease;
+              `}
             >
               {messages.join("\n") + "\n"}
             </Div>

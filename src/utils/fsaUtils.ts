@@ -53,6 +53,8 @@ export type WorkspaceState = {
   cursorPositions?: Record<string, { lineNumber: number; column: number }>;
   selections?: Record<string, SelectionRange[]>;
   lastRender?: PersistedLastRender | null;
+  /** Last selected source that contained at least one enabled // @export block. */
+  lastRenderableFilePath?: string | null;
 };
 
 const WARN_ONCE_KEYS = new Set<string>();
@@ -540,6 +542,13 @@ export async function updateWorkspaceLastRender(
     lastRender: data,
   };
   await saveWorkspaceState(rootName, next);
+}
+
+export async function updateWorkspaceLastRenderableFile(
+  rootName: string,
+  filePath: string | null
+): Promise<void> {
+  await updateWorkspaceState(rootName, { lastRenderableFilePath: filePath });
 }
 
 export async function updateWorkspaceCameraState(
