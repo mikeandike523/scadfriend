@@ -166,11 +166,13 @@ export default function FileBrowser({
   onOpenFile,
   onOpenFilePermanent,
   openFilePath,
+  revision = 0,
 }: {
   rootHandle: FileSystemDirectoryHandle;
   onOpenFile: (path: string, handle: FileSystemFileHandle) => void;
   onOpenFilePermanent: (path: string, handle: FileSystemFileHandle) => void;
   openFilePath?: string | null;
+  revision?: number;
 }) {
   const [tree, setTree] = useState<FileNode[]>([]);
   const [expandedDirs, setExpandedDirs] = useState<Set<string>>(new Set());
@@ -208,7 +210,7 @@ export default function FileBrowser({
       setExpandedReady(true);
     }
     init();
-  }, [rootHandle]);
+  }, [rootHandle, revision]);
 
   // persist expanded state on changes
   useEffect(() => {

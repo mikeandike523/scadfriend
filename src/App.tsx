@@ -112,6 +112,116 @@ const LOG_PANEL_BACKGROUNDS: Record<LogPanelStatus, string> = {
   success: "#dff5df",
 };
 
+type MenuBarProps = {
+  workspaceName: string | null;
+  onOpenWorkspace: () => void;
+  onCloseWorkspace: () => void;
+  onCreateFile: () => void;
+  onSaveFile: () => void;
+  onCloseFile: () => void;
+  hasOpenFile: boolean;
+};
+
+function MenuBar({
+  workspaceName,
+  onOpenWorkspace,
+  onCloseWorkspace,
+  onCreateFile,
+  onSaveFile,
+  onCloseFile,
+  hasOpenFile,
+}: MenuBarProps) {
+  const [openMenu, setOpenMenu] = useState<"workspace" | "file" | null>(null);
+  const menuBarRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    const closeMenus = (event: MouseEvent) => {
+      if (!menuBarRef.current?.contains(event.target as Node)) setOpenMenu(null);
+    };
+    const closeOnEscape = (event: KeyboardEvent) => {
+      if (event.key === "Escape") setOpenMenu(null);
+    };
+    document.addEventListener("mousedown", closeMenus);
+    document.addEventListener("keydown", closeOnEscape);
+    return () => {
+      document.removeEventListener("mousedown", closeMenus);
+      document.removeEventListener("keydown", closeOnEscape);
+    };
+  }, []);
+
+  const runMenuAction = (action: () => void) => {
+    setOpenMenu(null);
+    action();
+  };
+
+  return (
+    <div className="menu-bar" ref={menuBarRef} role="menubar" aria-label="Application menu">
+      <div className="menu-bar__group">
+        <button
+          className="menu-bar__trigger"
+          type="button"
+          role="menuitem"
+          aria-haspopup="menu"
+          aria-expanded={openMenu === "workspace"}
+          onClick={() => setOpenMenu(openMenu === "workspace" ? null : "workspace")}
+        >
+          Workspace
+        </button>
+        {openMenu === "workspace" && (
+          <div className="menu-dropdown" role="menu">
+            <div className="menu-dropdown__label" role="presentation">
+              <span>Workspace</span>
+              <strong>{workspaceName ?? "No workspace open"}</strong>
+            </div>
+            <div className="menu-dropdown__separator" />
+            <button type="button" role="menuitem" onClick={() => runMenuAction(onOpenWorkspace)}>
+              Open New Workspace…
+            </button>
+            <button
+              type="button"
+              role="menuitem"
+              disabled={!workspaceName}
+              onClick={() => runMenuAction(onCloseWorkspace)}
+            >
+              Close Workspace
+            </button>
+          </div>
+        )}
+      </div>
+      <div className="menu-bar__group">
+        <button
+          className="menu-bar__trigger"
+          type="button"
+          role="menuitem"
+          aria-haspopup="menu"
+          aria-expanded={openMenu === "file"}
+          onClick={() => setOpenMenu(openMenu === "file" ? null : "file")}
+        >
+          File
+        </button>
+        {openMenu === "file" && (
+          <div className="menu-dropdown" role="menu">
+            <button
+              type="button"
+              role="menuitem"
+              disabled={!workspaceName}
+              onClick={() => runMenuAction(onCreateFile)}
+            >
+              Create New File…
+            </button>
+            <button type="button" role="menuitem" disabled={!hasOpenFile} onClick={() => runMenuAction(onSaveFile)}>
+              Save File
+            </button>
+            <button type="button" role="menuitem" disabled={!hasOpenFile} onClick={() => runMenuAction(onCloseFile)}>
+              Close File
+            </button>
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
 const MIN_PANE_FRAC: PaneLayout = {
   fileBrowser: 0.2,
   editor: 0.2,
@@ -311,6 +421,7 @@ export default function App() {
   const [projectHandle, setProjectHandle] =
     useState<FileSystemDirectoryHandle | null>(null);
   const [workspaceLoaded, setWorkspaceLoaded] = useState(false);
+  const [fileBrowserRevision, setFileBrowserRevision] = useState(0);
 
   // Import validation squiggles
   useImportDiagnostics(
@@ -952,6 +1063,33 @@ export default function App() {
     );
   };
 
+  const createNewFile = async () => {
+    if (!projectHandle) return;
+    const requestedName = window.prompt("New file name", "untitled.scad");
+    if (requestedName === null) return;
+    const filename = requestedName.trim();
+    if (!filename || filename === "." || filename === ".." || /[\\/]/.test(filename)) {
+      window.alert("Enter a file name without folder separators.");
+      return;
+    }
+
+    try {
+      try {
+        await projectHandle.getFileHandle(filename);
+        window.alert(`A file named \"${filename}\" already exists.`);
+        return;
+      } catch (err) {
+        if (err instanceof DOMException && err.name !== "NotFoundError") throw err;
+      }
+      const handle = await projectHandle.getFileHandle(filename, { create: true });
+      setFileBrowserRevision((revision) => revision + 1);
+      await tabManager.openFilePermanent(handle, filename);
+    } catch (err) {
+      log(`Failed to create file: ${formatError(err)}`);
+      window.alert(`Failed to create file: ${formatError(err)}`);
+    }
+  };
+
   const openFileFromBrowser = async (
     path: string,
     handle: FileSystemFileHandle
@@ -1267,11 +1405,22 @@ export default function App() {
   };
 
   return (
-    <>
+    <div className="app-shell">
+      <MenuBar
+        workspaceName={projectHandle?.name ?? null}
+        onOpenWorkspace={selectProject}
+        onCloseWorkspace={closeProject}
+        onCreateFile={createNewFile}
+        onSaveFile={tabManager.saveCurrentFile}
+        onCloseFile={() => {
+          if (tabManager.activeTabIndex >= 0) void tabManager.closeTab(tabManager.activeTabIndex);
+        }}
+        hasOpenFile={tabManager.activeTabIndex >= 0}
+      />
       {!projectHandle ? (
         <Div
           width="100vw"
-          height="100vh"
+          flex="1"
           display="flex"
           flexDirection="column"
           alignItems="center"
@@ -1297,7 +1446,8 @@ export default function App() {
         <div
           style={{
             width: "100vw",
-            height: "100vh",
+            flex: 1,
+            minHeight: 0,
             overflow: "hidden",
             display: "grid",
             gridTemplateColumns: `${fileBrowserFrac}fr ${resizeBarSVGHelper.getComputedWidth()}px ${editorFrac}fr ${resizeBarSVGHelper.getComputedWidth()}px ${viewerFrac}fr`,
@@ -1308,26 +1458,15 @@ export default function App() {
               height: "100%",
               background: "#eee",
               display: "grid",
-              gridTemplateRows: "auto 1fr auto",
+              gridTemplateRows: "1fr auto",
               gridTemplateColumns: "1fr",
               overflow: "hidden",
             }}
           >
-            <Div
-              display="flex"
-              alignItems="center"
-              justifyContent="space-between"
-              padding="8px"
-              background="#ddd"
-            >
-              <P margin="0" fontWeight="bold">
-                {projectHandle.name}
-              </P>
-              <Button onClick={closeProject}>Close Project</Button>
-            </Div>
             <div style={{ overflow: "auto" }}>
               <FileBrowser
                 rootHandle={projectHandle}
+                revision={fileBrowserRevision}
                 onOpenFile={openFileFromBrowser}
                 onOpenFilePermanent={openFileFromBrowserPermanent}
                 openFilePath={tabManager.filePath}
@@ -1667,6 +1806,6 @@ export default function App() {
           <P textAlign="center">Upgrade to a modern browser.</P>
         </Div>
       </Div>
-    </>
+    </div>
   );
 }
